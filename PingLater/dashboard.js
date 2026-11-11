@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupWizardTab();
   setupQuickPingTab();
   setupTemplatesTab();
+  setupSnippetsTab();
   setupSnoozeTab();
   setupSettingsTab();
   setupEditScheduleModal();
@@ -47,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load initial data
   await refreshBatchesList();
   await refreshTemplatesList();
+  await refreshSnippetsList();
   await refreshSnoozeView();
   populateSettingsForm();
   updateLiveClock();
@@ -99,6 +101,7 @@ function switchTab(tabId) {
 
   if (tabId === 'tab-batches') refreshBatchesList();
   if (tabId === 'tab-templates') refreshTemplatesList();
+  if (tabId === 'tab-snippets') refreshSnippetsList();
   if (tabId === 'tab-snooze') refreshSnoozeView();
   if (tabId === 'tab-wizard') checkWizardActiveBatch();
 }
@@ -2027,6 +2030,29 @@ async function refreshSnoozeView() {
   renderSnoozeCards();
 }
 
+function formatDashboardSnoozeRemaining(dueAtIso) {
+  const diffMs = new Date(dueAtIso).getTime() - Date.now();
+  if (diffMs <= 0) return 'Overdue';
+  const totalSecs = Math.floor(diffMs / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function calculateDashboardSnoozeProgress(s) {
+  if (!s || !s.snoozedAt || !s.dueAt) return 0;
+  const start = new Date(s.snoozedAt).getTime();
+  const end = new Date(s.dueAt).getTime();
+  const now = Date.now();
+  const total = end - start;
+  if (total <= 0) return 100;
+  const elapsed = now - start;
+  return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+}
+
 function renderSnoozeCards() {
   const container = document.getElementById('snoozeCardsContainer');
   if (!container) return;
@@ -2060,6 +2086,7 @@ function renderSnoozeCards() {
     const isDue = s.status === SNOOZE_STATUS.DUE || (s.status === SNOOZE_STATUS.AWAITING && new Date(s.dueAt).getTime() <= now);
     const isReplied = s.status === SNOOZE_STATUS.REPLIED;
     const cardClass = isReplied ? 'replied' : isDue ? 'due' : 'awaiting';
+    const progressPct = calculateDashboardSnoozeProgress(s);
 
     card.className = `snooze-card ${cardClass}`;
 
@@ -2067,11 +2094,9 @@ function renderSnoozeCards() {
     if (isReplied) {
       badgeHtml = `<span class="badge-snooze-replied">🎉 Replied</span>`;
     } else if (isDue) {
-      badgeHtml = `<span class="badge-snooze-due">⏰ Overdue</span>`;
+      badgeHtml = `<span class="badge-snooze-due">⏰ Overdue 0s</span>`;
     } else {
-      const diffMs = new Date(s.dueAt).getTime() - now;
-      const hoursLeft = Math.max(1, Math.round(diffMs / 3600000));
-      badgeHtml = `<span class="badge-snooze-awaiting">⏳ ${hoursLeft}h left</span>`;
+      badgeHtml = `<span class="badge-snooze-awaiting snooze-live-ticker" data-due="${s.dueAt}" data-id="${s.id}">⏳ ${formatDashboardSnoozeRemaining(s.dueAt)}</span>`;
     }
 
     const snoozedDateStr = new Date(s.snoozedAt || s.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -2084,6 +2109,10 @@ function renderSnoozeCards() {
           <div class="snooze-card-phone">${s.phone ? `+${escapeHtml(s.phone)}` : 'WhatsApp Contact'}</div>
         </div>
         ${badgeHtml}
+      </div>
+
+      <div class="snooze-progress-wrap" title="${progressPct}% deadline elapsed">
+        <div class="snooze-progress-fill" style="width: ${progressPct}%;"></div>
       </div>
 
       <div class="snooze-card-meta">
@@ -2122,6 +2151,227 @@ function renderSnoozeCards() {
       if (confirm(`Remove tracking for ${s.contactName || 'this contact'}?`)) {
         await StorageService.deleteSnooze(s.id);
         await refreshSnoozeView();
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+// 1-second live countdown ticker for dashboard snooze cards
+setInterval(() => {
+  const activeTab = document.getElementById('tab-snooze');
+  if (!activeTab || !activeTab.classList.contains('active')) return;
+
+  const tickerEls = document.querySelectorAll('.snooze-live-ticker[data-due]');
+  tickerEls.forEach((el) => {
+    const due = el.dataset.due;
+    const diff = new Date(due).getTime() - Date.now();
+    const card = el.closest('.snooze-card');
+
+    if (diff <= 0) {
+      el.className = 'badge-snooze-due';
+      el.textContent = '⏰ Overdue 0s';
+      if (card) {
+        card.className = 'snooze-card due';
+        const fill = card.querySelector('.snooze-progress-fill');
+        if (fill) fill.style.width = '100%';
+      }
+    } else {
+      el.textContent = `⏳ ${formatDashboardSnoozeRemaining(due)}`;
+      if (card) {
+        const snooze = currentSnoozes.find((x) => x.id === el.dataset.id);
+        if (snooze) {
+          const fill = card.querySelector('.snooze-progress-fill');
+          if (fill) fill.style.width = `${calculateDashboardSnoozeProgress(snooze)}%`;
+        }
+      }
+    }
+  });
+}, 1000);
+
+// ==========================================
+// TAB: QUICK SNIPPETS MANAGER (/shortcuts)
+// ==========================================
+
+let currentSnippets = [];
+
+function setupSnippetsTab() {
+  // Modal open
+  document.getElementById('btnOpenNewSnippetModal')?.addEventListener('click', () => {
+    openSnippetModal();
+  });
+
+  // Modal close
+  document.getElementById('btnCloseSnippetModal')?.addEventListener('click', closeSnippetModal);
+  document.getElementById('btnCancelSnippetModal')?.addEventListener('click', closeSnippetModal);
+
+  // Variable pills in modal
+  document.querySelectorAll('#snippetModal .btn-var-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.var;
+      const textarea = document.getElementById('snippetBody');
+      if (textarea && v) {
+        const start = textarea.selectionStart || textarea.value.length;
+        const end = textarea.selectionEnd || textarea.value.length;
+        const text = textarea.value;
+        textarea.value = text.substring(0, start) + v + text.substring(end);
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + v.length;
+      }
+    });
+  });
+
+  // Save snippet
+  document.getElementById('btnSaveSnippetModal')?.addEventListener('click', saveSnippetFromModal);
+}
+
+function openSnippetModal(snippetId = null) {
+  const modal = document.getElementById('snippetModal');
+  const titleEl = document.getElementById('snippetModalTitle');
+  const idInput = document.getElementById('snippetModalId');
+  const shortcutInput = document.getElementById('snippetShortcut');
+  const nameInput = document.getElementById('snippetTitle');
+  const catInput = document.getElementById('snippetCategory');
+  const bodyInput = document.getElementById('snippetBody');
+
+  if (snippetId) {
+    const tpl = currentSnippets.find((t) => t.id === snippetId);
+    if (tpl) {
+      titleEl.textContent = '⚡ Edit Quick Snippet';
+      idInput.value = tpl.id;
+      shortcutInput.value = tpl.shortcut || '';
+      nameInput.value = tpl.title || '';
+      catInput.value = tpl.category || 'Quick Snippets';
+      bodyInput.value = tpl.body || '';
+    }
+  } else {
+    titleEl.textContent = '⚡ Create Quick Snippet';
+    idInput.value = '';
+    shortcutInput.value = '';
+    nameInput.value = '';
+    catInput.value = 'Quick Snippets';
+    bodyInput.value = '';
+  }
+
+  modal?.classList.remove('hidden');
+  setTimeout(() => shortcutInput?.focus(), 50);
+}
+
+function closeSnippetModal() {
+  document.getElementById('snippetModal')?.classList.add('hidden');
+}
+
+async function saveSnippetFromModal() {
+  const id = document.getElementById('snippetModalId').value.trim();
+  let shortcut = document.getElementById('snippetShortcut').value.trim().replace(/^\/+/, '').toLowerCase();
+  const title = document.getElementById('snippetTitle').value.trim();
+  const category = document.getElementById('snippetCategory').value.trim() || 'Quick Snippets';
+  const body = document.getElementById('snippetBody').value.trim();
+
+  if (!shortcut) {
+    alert('Please enter a shortcut trigger (e.g. gf, pricing, cal).');
+    return;
+  }
+
+  if (!body) {
+    alert('Please enter snippet message content.');
+    return;
+  }
+
+  const payload = {
+    shortcut,
+    title: title || `/${shortcut}`,
+    category,
+    body,
+    variables: body.includes('{{name}}') ? ['name'] : []
+  };
+
+  if (id) {
+    payload.id = id;
+  }
+
+  await StorageService.saveTemplate(payload);
+  closeSnippetModal();
+  await refreshSnippetsList();
+  await refreshTemplatesList();
+}
+
+async function refreshSnippetsList() {
+  const allTemplates = await StorageService.getTemplates();
+  // Filter templates that have a shortcut or are in Quick Snippets
+  currentSnippets = allTemplates.filter((t) => t.shortcut || t.category === 'Quick Snippets');
+
+  // Update nav badge
+  const badge = document.getElementById('navSnippetsBadge');
+  if (badge) {
+    badge.textContent = String(currentSnippets.length);
+  }
+
+  renderSnippetsGrid();
+}
+
+function renderSnippetsGrid() {
+  const container = document.getElementById('snippetsListContainer');
+  if (!container) return;
+
+  if (currentSnippets.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 12px;">
+        <div style="font-size: 36px; margin-bottom: 8px;">⚡</div>
+        <h4 style="font-size: 16px; font-weight: 700; color: #0F172A; margin: 0 0 6px 0;">No Quick Snippets Yet</h4>
+        <p style="font-size: 13px; color: #64748B; margin: 0 0 16px 0;">Create snippets with shortcuts like /gf, /cal, or /pricing to insert them with 1 keystroke in WhatsApp Web.</p>
+        <button type="button" class="btn btn-primary btn-sm" id="btnEmptyCreateSnippet">+ Create First Snippet</button>
+      </div>
+    `;
+    container.querySelector('#btnEmptyCreateSnippet')?.addEventListener('click', () => openSnippetModal());
+    return;
+  }
+
+  container.innerHTML = '';
+
+  currentSnippets.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'snippet-card';
+
+    const shortcutText = s.shortcut ? `/${s.shortcut}` : '/snippet';
+
+    card.innerHTML = `
+      <div class="snippet-card-top">
+        <span class="snippet-shortcut-pill">${escapeHtml(shortcutText)}</span>
+        <h4 class="snippet-card-title">${escapeHtml(s.title || 'Quick Snippet')}</h4>
+      </div>
+
+      <div class="snippet-card-body">${escapeHtml(s.body || '')}</div>
+
+      <div class="snippet-card-actions">
+        <button type="button" class="btn btn-outline btn-sm btn-copy-snippet" title="Copy to clipboard">📋 Copy</button>
+        <button type="button" class="btn btn-outline btn-sm btn-edit-snippet">✏️ Edit</button>
+        <button type="button" class="btn btn-neutral btn-sm btn-delete-snippet" title="Delete snippet">🗑️</button>
+      </div>
+    `;
+
+    // Copy action
+    card.querySelector('.btn-copy-snippet')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(s.body || '');
+      const btn = card.querySelector('.btn-copy-snippet');
+      if (btn) {
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => (btn.textContent = '📋 Copy'), 1500);
+      }
+    });
+
+    // Edit action
+    card.querySelector('.btn-edit-snippet')?.addEventListener('click', () => {
+      openSnippetModal(s.id);
+    });
+
+    // Delete action
+    card.querySelector('.btn-delete-snippet')?.addEventListener('click', async () => {
+      if (confirm(`Delete snippet "/${s.shortcut}" (${s.title})?`)) {
+        await StorageService.deleteTemplate(s.id);
+        await refreshSnippetsList();
+        await refreshTemplatesList();
       }
     });
 
