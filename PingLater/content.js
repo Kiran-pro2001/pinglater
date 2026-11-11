@@ -135,6 +135,9 @@
       list.appendChild(li);
     });
 
+    // Prevent clicking anywhere inside popup from stealing focus from message composer
+    popup.onmousedown = (e) => e.preventDefault();
+
     // Position popup right above composer footer
     const rect = composer.getBoundingClientRect();
     const bottomPos = Math.max(10, window.innerHeight - rect.top + 8);
@@ -158,22 +161,10 @@
     });
   }
 
-  // Insert snippet into WhatsApp Web's contenteditable message composer
+  // Insert snippet into WhatsApp Web's Lexical/contenteditable composer
   function insertSnippet(tpl, charactersToDelete, composer) {
     if (!composer) return;
     composer.focus();
-
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      try {
-        // Delete the "/shortcut" text that the user typed
-        for (let i = 0; i < charactersToDelete; i++) {
-          sel.modify('extend', 'backward', 'character');
-        }
-      } catch (err) {
-        console.warn('[PingLater] Selection modify fallback:', err);
-      }
-    }
 
     // Replace {{name}} placeholder with current contact's name if detected
     let body = tpl.body || '';
@@ -184,9 +175,89 @@
       body = body.replace(/\{\{\s*name\s*\}\}/gi, 'there');
     }
 
-    // Insert text via document.execCommand
-    // This triggers WhatsApp Web's Draft.js & React synthetic input events natively!
-    document.execCommand('insertText', false, body);
+    const sel = window.getSelection();
+    let deleted = false;
+
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      let node = range.startContainer;
+      let offset = range.startOffset;
+
+      if (node && node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent;
+        const slashIdx = text.lastIndexOf('/', offset);
+        if (slashIdx !== -1) {
+          range.setStart(node, slashIdx);
+          range.setEnd(node, offset);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          try {
+            document.execCommand('delete');
+            deleted = true;
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (!deleted && sel && sel.rangeCount > 0) {
+      try {
+        for (let i = 0; i < charactersToDelete; i++) {
+          sel.modify('extend', 'backward', 'character');
+        }
+        document.execCommand('delete');
+      } catch (e) {}
+    }
+
+    // Direct tree walker check: if /shortcut is still literally in the composer, remove it
+    const shortcutTarget = `/${(tpl.shortcut || '').toLowerCase()}`;
+    if (shortcutTarget.length > 1) {
+      try {
+        const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT);
+        let currNode;
+        while ((currNode = walker.nextNode())) {
+          const idx = currNode.textContent.toLowerCase().lastIndexOf(shortcutTarget);
+          if (idx !== -1) {
+            const r = document.createRange();
+            r.setStart(currNode, idx);
+            r.setEnd(currNode, idx + shortcutTarget.length);
+            sel.removeAllRanges();
+            sel.addRange(r);
+            document.execCommand('delete');
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    let handledByPaste = false;
+    // Method 1: Synthetic paste event (Native WhatsApp Web Lexical & React support)
+    try {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', body);
+      const pasteEvt = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt
+      });
+      const allowed = composer.dispatchEvent(pasteEvt);
+      if (!allowed) {
+        handledByPaste = true;
+      }
+    } catch (e) {
+      console.warn('[PingLater] Paste event failed:', e);
+    }
+
+    // Method 2: document.execCommand insertText fallback if paste wasn't consumed
+    if (!handledByPaste) {
+      try {
+        document.execCommand('insertText', false, body);
+      } catch (e) {}
+    }
+
+    // Method 3: dispatch input event so WhatsApp's Send (microphone -> paper airplane) button activates
+    try {
+      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: body }));
+    } catch (e) {}
 
     hidePopup();
   }
@@ -512,7 +583,10 @@
 
     // Auto-reply check in active chat: if the other person already replied, resolve snooze immediately!
     if (activeSnooze && activeSnooze.status === 'awaiting') {
-      checkActiveChatForReply(activeSnooze);
+      const resolved = checkActiveChatForReply(activeSnooze);
+      if (resolved) {
+        return;
+      }
     }
 
     // If dropdown is currently open, do not overwrite DOM
@@ -685,11 +759,15 @@
     const durationHours = totalMinutes / 60;
     const contactDisplayName = info.title || (info.phone ? `+${info.phone}` : 'Contact');
 
+    const lastBubble = getLastMessageBubble();
+    const lastSeenMessageId = getLastBubbleId(lastBubble);
+
     const newSnooze = {
       id: `snooze_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       contactName: contactDisplayName,
       phone: info.phone || '',
       cleanIdentifier: info.cleanIdentifier,
+      lastSeenMessageId: lastSeenMessageId,
       snoozedAt: now.toISOString(),
       dueAt: dueAt,
       durationHours: durationHours,
@@ -698,6 +776,12 @@
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
+
+    // Reflect synchronously in memory to eliminate render latency
+    snoozes.unshift(newSnooze);
+    if (snoozeContainer) {
+      snoozeContainer.dataset.currentState = '';
+    }
 
     chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
       const list = res.pinglater_snoozed_chats || [];
@@ -721,76 +805,127 @@
   }
 
   function resolveSnoozeManual(id) {
-    chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
-      const list = res.pinglater_snoozed_chats || [];
-      const item = list.find((s) => s.id === id);
-      if (item) {
-        item.status = 'replied';
-        item.repliedAt = new Date().toISOString();
-        chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
-          chrome.runtime.sendMessage({ type: 'CANCEL_SNOOZE_ALARM', snoozeId: id });
-          showPingLaterToast('🎉', `Marked as replied! Follow-up reminder cleared.`);
-          updateSnoozePill();
-        });
-      }
-    });
+    // 1. Immediately update in-memory snoozes array
+    const memItem = snoozes.find((s) => s.id === id);
+    if (memItem) {
+      memItem.status = 'replied';
+      memItem.repliedAt = new Date().toISOString();
+    }
+
+    // 2. Clear dataset state so pill re-renders immediately
+    if (snoozeContainer) {
+      snoozeContainer.dataset.currentState = '';
+    }
+
+    // 3. Persist to storage
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
+        const list = res.pinglater_snoozed_chats || [];
+        const item = list.find((s) => s.id === id);
+        if (item) {
+          item.status = 'replied';
+          item.repliedAt = new Date().toISOString();
+          chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
+            if (chrome.runtime?.id) {
+              chrome.runtime.sendMessage({ type: 'CANCEL_SNOOZE_ALARM', snoozeId: id });
+            }
+          });
+        }
+      });
+    }
+
+    // 4. Update UI immediately
+    showPingLaterToast('🎉', `Marked as replied! Follow-up reminder cleared.`);
+    updateSnoozePill();
+    updateLeftChatListBadges();
   }
 
   function cancelSnooze(id) {
+    snoozes = snoozes.filter((s) => s.id !== id);
+    if (snoozeContainer) snoozeContainer.dataset.currentState = '';
+
     chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
       const list = (res.pinglater_snoozed_chats || []).filter((s) => s.id !== id);
       chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
         chrome.runtime.sendMessage({ type: 'CANCEL_SNOOZE_ALARM', snoozeId: id });
         showPingLaterToast('✕', `Snooze reminder cancelled.`);
         updateSnoozePill();
+        updateLeftChatListBadges();
       });
     });
   }
 
-  // Auto-Reply Detection: checks if the latest message in the active chat is an incoming reply
-  function checkActiveChatForReply(activeSnooze) {
-    if (!activeSnooze || activeSnooze.status !== 'awaiting') return;
+  // ==========================================
+  // AUTO-REPLY DETECTION HELPERS
+  // ==========================================
+  function getLastMessageBubble() {
     const mainChat = document.querySelector('#main');
-    if (!mainChat) return;
+    if (!mainChat) return null;
 
-    const msgNodes = mainChat.querySelectorAll(
-      'div[data-id], div.message-in, div.message-out, div[data-testid="msg-container"], div[role="row"]'
-    );
-    if (!msgNodes || msgNodes.length === 0) return;
+    const bubbles = Array.from(
+      mainChat.querySelectorAll(
+        '.message-in, .message-out, div[class*="message-in"], div[class*="message-out"], div[data-id^="false_"], div[data-id^="true_"]'
+      )
+    ).filter((b) => {
+      if (b.closest('footer, [data-testid="conversation-compose-box"]')) return false;
+      return !b.parentElement?.closest(
+        '.message-in, .message-out, div[class*="message-in"], div[class*="message-out"], div[data-id^="false_"], div[data-id^="true_"]'
+      );
+    });
 
-    // Scan backwards from the very latest message
-    for (let i = msgNodes.length - 1; i >= Math.max(0, msgNodes.length - 6); i--) {
-      const node = msgNodes[i];
-      const dataId = node.getAttribute('data-id') || '';
-      const preText = node.getAttribute('data-pre-plain-text') || '';
-
-      const isOut =
-        dataId.startsWith('true_') ||
-        node.classList.contains('message-out') ||
-        Boolean(node.querySelector?.('.message-out, [class*="message-out"], [data-id^="true_"]')) ||
-        preText.includes('You:');
-
-      const isIn =
-        dataId.startsWith('false_') ||
-        node.classList.contains('message-in') ||
-        Boolean(node.querySelector?.('.message-in, [class*="message-in"], [data-id^="false_"]')) ||
-        (preText && !preText.includes('You:'));
-
-      if (isOut) {
-        // If the newest message was sent by us, no reply yet
-        break;
-      }
-
-      if (isIn) {
-        console.log('[PingLater] Auto-Reply Detected! Latest message is incoming for:', activeSnooze.contactName);
-        resolveSnoozeManual(activeSnooze.id);
-        showPingLaterToast('🎉', `${activeSnooze.contactName} just replied! "Awaiting Reply" reminder automatically cleared.`);
-        break;
-      }
-    }
+    return bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
   }
 
-  // Watches active chat for incoming message bubbles (.message-in)
+  function getLastBubbleId(bubble) {
+    const b = bubble || getLastMessageBubble();
+    if (!b) return null;
+    return b.getAttribute('data-id') || b.dataset.id || (b.innerText || '').slice(0, 30);
+  }
+
+  function isBubbleIncoming(bubble) {
+    if (!bubble) return false;
+    const dataId = bubble.getAttribute('data-id') || bubble.dataset.id || '';
+    if (dataId.startsWith('false_')) return true;
+    if (dataId.startsWith('true_')) return false;
+    if (bubble.classList.contains('message-in') || bubble.className.includes('message-in')) return true;
+    if (bubble.classList.contains('message-out') || bubble.className.includes('message-out')) return false;
+    const preText = bubble.getAttribute('data-pre-plain-text') || '';
+    if (preText && !preText.includes('You:')) return true;
+    return Boolean(bubble.querySelector('.message-in, div[data-id^="false_"]'));
+  }
+
+  // Auto-Reply Detection: checks if the latest message bubble in active chat is an incoming reply
+  function checkActiveChatForReply(activeSnooze) {
+    if (!activeSnooze || activeSnooze.status !== 'awaiting') return false;
+    const lastBubble = getLastMessageBubble();
+    if (!lastBubble) return false;
+
+    const currentId = getLastBubbleId(lastBubble);
+    const isIncoming = isBubbleIncoming(lastBubble);
+
+    // If we recorded the last seen message ID at snooze creation time:
+    if (activeSnooze.lastSeenMessageId) {
+      if (currentId === activeSnooze.lastSeenMessageId) {
+        return false; // Still the same message, no new reply
+      }
+      if (isIncoming) {
+        console.log('[PingLater] Auto-Reply Detected! New incoming message from:', activeSnooze.contactName);
+        resolveSnoozeManual(activeSnooze.id);
+        return true;
+      }
+      return false;
+    }
+
+    // Fallback: If latest bubble is incoming, contact replied!
+    if (isIncoming) {
+      console.log('[PingLater] Auto-Reply Detected! Latest message is incoming from:', activeSnooze.contactName);
+      resolveSnoozeManual(activeSnooze.id);
+      return true;
+    }
+    return false;
+  }
+
+  // Watches active chat for incoming message bubbles
   function initReplyObserver() {
     const mainChat = document.querySelector('#main');
     if (!mainChat) return;
@@ -799,34 +934,10 @@
       activeChatObserver.disconnect();
     }
 
-    activeChatObserver = new MutationObserver((mutations) => {
-      let hasNewIncoming = false;
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const dataId = node.getAttribute?.('data-id') || '';
-            const preText = node.getAttribute?.('data-pre-plain-text') || '';
-            if (
-              node.classList?.contains('message-in') ||
-              node.querySelector?.('.message-in') ||
-              dataId.includes('false_') ||
-              (preText && !preText.includes('You:'))
-            ) {
-              hasNewIncoming = true;
-              break;
-            }
-          }
-        }
-        if (hasNewIncoming) break;
-      }
-
-      if (hasNewIncoming) {
-        const activeSnooze = getActiveSnoozeForCurrentChat();
-        if (activeSnooze && activeSnooze.status === 'awaiting') {
-          console.log('[PingLater] Incoming message mutation detected for snoozed contact:', activeSnooze.contactName);
-          resolveSnoozeManual(activeSnooze.id);
-          showPingLaterToast('🎉', `${activeSnooze.contactName} just replied! "Awaiting Reply" reminder automatically cleared.`);
-        }
+    activeChatObserver = new MutationObserver(() => {
+      const activeSnooze = getActiveSnoozeForCurrentChat();
+      if (activeSnooze && activeSnooze.status === 'awaiting') {
+        checkActiveChatForReply(activeSnooze);
       }
     });
 
@@ -870,20 +981,38 @@
 
     const now = Date.now();
 
-    // Query all distinct conversation rows across #side, #pane-side, and drawers (including Archived)
-    let rows = Array.from(
-      document.querySelectorAll(
-        '#side div[role="listitem"], #side div[role="row"], #pane-side div[role="listitem"], #pane-side div[role="row"], div[data-testid="cell-frame-container"]'
-      )
-    );
+    // Clean up any stray badges that aren't inside valid contact rows
+    document.querySelectorAll('.pinglater-chatlist-badge').forEach((b) => {
+      if (!b.closest('#pane-side div[role="listitem"], #side div[role="listitem"], #pane-side div[role="row"], #side div[role="row"], div[data-testid="cell-frame-container"]')) {
+        b.remove();
+      }
+    });
 
+    // Query top-level primary list item containers only (never nested container children)
+    let rows = Array.from(
+      document.querySelectorAll('#pane-side div[role="listitem"], #side div[role="listitem"]')
+    );
     if (rows.length === 0) {
-      rows = Array.from(document.querySelectorAll('#side div[tabindex="-1"], #pane-side div[tabindex="-1"]')).filter(
-        (el) => el.offsetHeight > 40 && el.offsetWidth > 150
+      rows = Array.from(
+        document.querySelectorAll('#pane-side div[role="row"], #side div[role="row"]')
+      );
+    }
+    if (rows.length === 0) {
+      rows = Array.from(
+        document.querySelectorAll('div[data-testid="cell-frame-container"]')
       );
     }
 
     rows.forEach((row) => {
+      // Purge any duplicate badges on this row
+      const existingBadges = row.querySelectorAll('.pinglater-chatlist-badge');
+      if (existingBadges.length > 1) {
+        for (let i = 1; i < existingBadges.length; i++) {
+          existingBadges[i].remove();
+        }
+      }
+      let existingBadge = existingBadges[0] || null;
+
       // 1. Get contact name or phone
       let contactTitle = '';
       const titleEl =
@@ -924,8 +1053,6 @@
         return false;
       });
 
-      let existingBadge = row.querySelector('.pinglater-chatlist-badge');
-
       if (match) {
         // Auto-reply detection on left list: check unread indicators
         const unreadEl =
@@ -946,13 +1073,14 @@
         const badgeClass = isDue ? 'pinglater-chatlist-badge due' : 'pinglater-chatlist-badge awaiting';
         const labelText = isDue ? '⚠️ OVERDUE 0s' : `⏳ ${formatRemainingTime(match.dueAt)}`;
 
-        if (existingBadge) {
+        if (existingBadge && existingBadge.querySelector('.pinglater-mini-fill')) {
           existingBadge.className = badgeClass;
           const bar = existingBadge.querySelector('.pinglater-mini-fill');
           if (bar) bar.style.width = `${progressPct}%`;
           const txt = existingBadge.querySelector('.pinglater-badge-txt');
           if (txt) txt.textContent = labelText;
         } else {
+          if (existingBadge) existingBadge.remove();
           // Guarantee row container is relatively positioned so the absolute badge is framed properly
           if (getComputedStyle(row).position === 'static') {
             row.style.position = 'relative';
