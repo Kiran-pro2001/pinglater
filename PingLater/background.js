@@ -70,7 +70,36 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await triggerSnoozeDue(snoozeId);
     return;
   }
+
+  if (alarm.name.startsWith('cadence_')) {
+    const enrollmentId = alarm.name.replace('cadence_', '');
+    await triggerCadenceDue(enrollmentId);
+    return;
+  }
 });
+
+/**
+ * Handles a cadence step that has become due for sending (Feature 5).
+ */
+async function triggerCadenceDue(enrollmentId) {
+  const { all } = await StorageService.refreshDueCadenceEnrollments();
+  const enr = all.find((e) => e.id === enrollmentId);
+  if (!enr || enr.status !== 'due') return;
+
+  const contact = enr.contactName || (enr.phone ? `+${enr.phone}` : 'Contact');
+  const stepNum = (enr.currentStepIndex || 0) + 1;
+
+  chrome.notifications.create(`notif_cadence_${enrollmentId}`, {
+    type: 'basic',
+    iconUrl: 'assets/icons/icon128.png',
+    title: `🎯 Follow-Up Due: ${contact}`,
+    message: `Step ${stepNum} of ${enr.totalSteps} (${enr.cadenceName}) is ready to review and send.`,
+    priority: 2,
+    requireInteraction: true
+  });
+
+  await checkOverdueAndRefreshBadge();
+}
 
 /**
  * Handles a snoozed chat that expired without receiving a reply (Feature 2).
@@ -257,13 +286,20 @@ export async function checkOverdueAndRefreshBadge() {
     }
   }
 
-  const totalActionNeeded = overdueCount + dueSnoozeCount;
+  // Check due cadence enrollments (Feature 5)
+  let dueCadenceCount = 0;
+  try {
+    const { due } = await StorageService.refreshDueCadenceEnrollments();
+    dueCadenceCount = (due || []).length;
+  } catch (e) {}
+
+  const totalActionNeeded = overdueCount + dueSnoozeCount + dueCadenceCount;
 
   // Update Toolbar Badge
   if (totalActionNeeded > 0) {
     chrome.action.setBadgeText({ text: String(totalActionNeeded) });
     chrome.action.setBadgeBackgroundColor({ color: '#E53E3E' }); // Red for overdue / due
-    chrome.action.setTitle({ title: `PingLater: ${totalActionNeeded} overdue follow-up(s) & awaiting reply tasks!` });
+    chrome.action.setTitle({ title: `PingLater: ${totalActionNeeded} overdue follow-up(s), awaiting reply tasks, or due cadences!` });
   } else if (activePendingCount > 0) {
     chrome.action.setBadgeText({ text: String(activePendingCount) });
     chrome.action.setBadgeBackgroundColor({ color: '#25D366' }); // Green for active messages
@@ -400,6 +436,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         return true;
       }
+      break;
+    }
+
+    case 'CADENCE_CONTACT_REPLIED': {
+      const { phone, name } = message;
+      StorageService.recordCadenceContactReply(phone, name)
+        .then((res) => {
+          if (res.modifiedCount > 0) {
+            console.log(`[PingLater] Auto-halted ${res.modifiedCount} cadence enrollment(s) for replied contact:`, name || phone);
+            checkOverdueAndRefreshBadge();
+          }
+          sendResponse({ success: true, modifiedCount: res.modifiedCount });
+        })
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    case 'SCHEDULE_CADENCE_ALARM': {
+      const { enrollmentId, dueAt } = message;
+      const targetTime = new Date(dueAt).getTime();
+      if (!isNaN(targetTime)) {
+        chrome.alarms.create(`cadence_${enrollmentId}`, { when: targetTime });
+      }
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'CANCEL_CADENCE_ALARM': {
+      if (message.enrollmentId) {
+        chrome.alarms.clear(`cadence_${message.enrollmentId}`);
+      }
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
       break;
     }
 

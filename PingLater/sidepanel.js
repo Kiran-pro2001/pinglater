@@ -9,6 +9,7 @@ import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
 import { calculateNextRecurringDate, formatRecurrenceSummary } from './utils/recurring.js';
 import { writeBackToGoogleSheet } from './utils/sheets.js';
+import { recordStepSent } from './utils/cadence.js';
 
 // Application State
 let currentBatch = null;
@@ -479,6 +480,32 @@ async function handleMarkSent() {
       status: 'Sent',
       sentAt: new Date().toLocaleString()
     }).catch((err) => console.warn('[PingLater] Sheet writeback error:', err));
+  }
+
+  // Cadence Step Advancement (Feature 5: Multi-Step Sequences)
+  if (currentRecipient && currentRecipient.cadenceEnrollmentId) {
+    try {
+      const enrollments = await StorageService.getCadenceEnrollments();
+      const enr = enrollments.find((e) => e.id === currentRecipient.cadenceEnrollmentId);
+      if (enr) {
+        const blueprints = await StorageService.getCadenceBlueprints();
+        const bp = blueprints.find((b) => b.id === enr.cadenceId);
+        const updated = recordStepSent(enr, bp, { message: currentRecipient.renderedMessage });
+        await StorageService.saveCadenceEnrollment(updated);
+
+        if (updated.nextStepDueAt && updated.status === 'awaiting') {
+          if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+            chrome.runtime.sendMessage({
+              type: 'SCHEDULE_CADENCE_ALARM',
+              enrollmentId: updated.id,
+              dueAt: updated.nextStepDueAt
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[PingLater] Error advancing cadence enrollment in sidepanel:', err);
+    }
   }
 
   // Reload batch state

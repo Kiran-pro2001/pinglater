@@ -11,12 +11,31 @@ import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
 import { calculateNextRecurringDate, calculateTotalCycles, formatRecurrenceSummary, RECURRING_FREQUENCY } from './utils/recurring.js';
 import { fetchGoogleSheetCsv, writeBackToGoogleSheet, GOOGLE_APPS_SCRIPT_TEMPLATE } from './utils/sheets.js';
+import {
+  CADENCE_STATUS,
+  PRESET_CADENCES,
+  createCadenceBlueprint,
+  enrollContactInCadence,
+  enrollBatchInCadence,
+  recordStepSent,
+  recordContactReplied,
+  checkDueEnrollments,
+  pauseEnrollment,
+  resumeEnrollment,
+  cancelEnrollment,
+  calculateCadenceMetrics,
+  formatDelayText,
+  interpolateCadenceMessage,
+  normalizeCadencePhone
+} from './utils/cadence.js';
 
 // Application State
 let currentTab = 'tab-quick-ping';
 let currentBatches = [];
 let currentTemplates = [];
 let currentSettings = null;
+let currentCadenceBlueprints = [];
+let currentCadenceEnrollments = [];
 
 // Wizard State
 let wizardRawRows = [];
@@ -40,6 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTemplatesTab();
   setupSnippetsTab();
   setupSnoozeTab();
+  setupCadencesTab();
   setupSettingsTab();
   setupEditScheduleModal();
   setupSkippedModal();
@@ -50,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshTemplatesList();
   await refreshSnippetsList();
   await refreshSnoozeView();
+  await refreshCadencesData();
   populateSettingsForm();
   updateLiveClock();
   setInterval(updateLiveClock, 1000);
@@ -103,6 +124,7 @@ function switchTab(tabId) {
   if (tabId === 'tab-templates') refreshTemplatesList();
   if (tabId === 'tab-snippets') refreshSnippetsList();
   if (tabId === 'tab-snooze') refreshSnoozeView();
+  if (tabId === 'tab-cadences') refreshCadencesData();
   if (tabId === 'tab-wizard') checkWizardActiveBatch();
 }
 
@@ -2515,3 +2537,893 @@ function escapeHtml(str) {
   div.textContent = str || '';
   return div.innerHTML;
 }
+
+// ========================================================
+// CONTROLLER: MULTI-STEP FOLLOW-UP CADENCES (FEATURE 5)
+// ========================================================
+
+let currentCadenceView = 'pipeline';
+let parsedCadenceCsvLeads = [];
+
+export function setupCadencesTab() {
+  // 1. Sub-Tab Switching (Pipeline vs Blueprints)
+  const subtabBtns = document.querySelectorAll('.btn-cadence-subtab');
+  subtabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const view = btn.getAttribute('data-cadence-view');
+      switchCadenceView(view);
+    });
+  });
+
+  // 2. Filter & Search listeners
+  document.getElementById('cadenceSearchInput')?.addEventListener('input', renderCadencePipeline);
+  document.getElementById('cadenceFilterStatus')?.addEventListener('change', renderCadencePipeline);
+  document.getElementById('cadenceFilterBlueprint')?.addEventListener('change', renderCadencePipeline);
+
+  // 3. Modal Openers
+  document.getElementById('btnOpenCadenceModal')?.addEventListener('click', () => {
+    openCadenceBuilderModal();
+  });
+
+  document.getElementById('btnOpenCadenceEnrollModal')?.addEventListener('click', () => {
+    openCadenceEnrollModal();
+  });
+
+  // 4. Modal Closers
+  document.getElementById('btnCloseCadenceModal')?.addEventListener('click', closeCadenceBuilderModal);
+  document.getElementById('btnCancelCadenceModal')?.addEventListener('click', closeCadenceBuilderModal);
+  document.getElementById('btnCloseCadenceEnrollModal')?.addEventListener('click', closeCadenceEnrollModal);
+  document.getElementById('btnCancelCadenceEnrollModal')?.addEventListener('click', closeCadenceEnrollModal);
+
+  // 5. Cadence Builder: Add Step button
+  document.getElementById('btnAddCadenceStep')?.addEventListener('click', () => {
+    const container = document.getElementById('cadenceStepsContainer');
+    if (!container) return;
+    const currentStepCount = container.querySelectorAll('.cadence-step-builder-card').length;
+    const defaultDelay = currentStepCount === 0 ? 0 : 3;
+    const newStep = {
+      title: `Follow-up #${currentStepCount}`,
+      delayDays: defaultDelay,
+      delayHours: defaultDelay * 24,
+      message: 'Hey {{name}}, following up on our previous chat! Let me know if you need any info.'
+    };
+    appendStepBuilderCard(container, newStep, currentStepCount);
+    renumberStepBuilderCards();
+  });
+
+  // 6. Cadence Builder: Save Blueprint
+  document.getElementById('btnSaveCadenceModal')?.addEventListener('click', saveCadenceBlueprintFromModal);
+
+  // 7. Enroll Modal: Mode Tabs (Single vs Batch)
+  const enrollTabs = document.querySelectorAll('.btn-enroll-tab');
+  enrollTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const mode = tab.getAttribute('data-enroll-mode');
+      enrollTabs.forEach((t) => t.classList.toggle('active', t === tab));
+      document.getElementById('enrollModeSingle')?.classList.toggle('hidden', mode !== 'single');
+      document.getElementById('enrollModeBatch')?.classList.toggle('hidden', mode !== 'batch');
+    });
+  });
+
+  // 8. Enroll Modal: Batch CSV Dropzone & File Input
+  setupCadenceCsvDropzone();
+
+  // 9. Enroll Modal: Submit Enrollment
+  document.getElementById('btnSubmitCadenceEnroll')?.addEventListener('click', submitCadenceEnrollment);
+
+  // 10. Queue Due Cadences in Side Panel
+  document.getElementById('btnQueueDueCadences')?.addEventListener('click', queueDueCadencesInSidePanel);
+
+  // 11. Live Ticker for countdowns
+  setInterval(() => {
+    if (currentTab === 'tab-cadences' && currentCadenceView === 'pipeline') {
+      updateCadencePipelineCountdowns();
+    }
+  }, 1000);
+}
+
+function switchCadenceView(view) {
+  currentCadenceView = view;
+  document.querySelectorAll('.btn-cadence-subtab').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-cadence-view') === view);
+  });
+  document.getElementById('cadenceViewPipeline')?.classList.toggle('hidden', view !== 'pipeline');
+  document.getElementById('cadenceViewBlueprints')?.classList.toggle('hidden', view !== 'blueprints');
+}
+
+export async function refreshCadencesData() {
+  try {
+    currentCadenceBlueprints = await StorageService.getCadenceBlueprints();
+    const { all } = await StorageService.refreshDueCadenceEnrollments();
+    currentCadenceEnrollments = all;
+
+    // Update KPI metrics
+    const metrics = calculateCadenceMetrics(currentCadenceEnrollments);
+    const activeBpEl = document.getElementById('cadenceMetricActiveCadences');
+    if (activeBpEl) activeBpEl.textContent = String(currentCadenceBlueprints.length);
+
+    const enrolledEl = document.getElementById('cadenceMetricTotalEnrolled');
+    if (enrolledEl) enrolledEl.textContent = String(metrics.total);
+
+    const dueEl = document.getElementById('cadenceMetricDueNow');
+    if (dueEl) dueEl.textContent = String(metrics.due);
+
+    const replyEl = document.getElementById('cadenceMetricReplyRate');
+    if (replyEl) replyEl.textContent = `${metrics.replyRatePct}%`;
+
+    // Badges in subtab and sidebar
+    const pipeBadge = document.getElementById('cadencePipelineBadge');
+    if (pipeBadge) pipeBadge.textContent = String(metrics.total);
+
+    const bpBadge = document.getElementById('cadenceBlueprintsBadge');
+    if (bpBadge) bpBadge.textContent = String(currentCadenceBlueprints.length);
+
+    const navBadge = document.getElementById('navCadenceBadge');
+    if (navBadge) {
+      if (metrics.due > 0) {
+        navBadge.textContent = String(metrics.due);
+        navBadge.classList.remove('hidden');
+      } else {
+        navBadge.classList.add('hidden');
+      }
+    }
+
+    // Populate filter and enroll select dropdowns
+    populateCadenceFilterSelect();
+
+    // Render active views
+    renderCadencePipeline();
+    renderCadenceBlueprints();
+  } catch (err) {
+    console.warn('[PingLater] Error refreshing cadences data:', err);
+  }
+}
+
+function populateCadenceFilterSelect() {
+  const filterSelect = document.getElementById('cadenceFilterBlueprint');
+  const enrollSelect = document.getElementById('cadenceEnrollSelect');
+
+  if (filterSelect) {
+    const prevVal = filterSelect.value;
+    filterSelect.innerHTML = `<option value="all">All Cadence Sequences</option>`;
+    currentCadenceBlueprints.forEach((bp) => {
+      filterSelect.innerHTML += `<option value="${escapeHtml(bp.id)}">${escapeHtml(bp.name)}</option>`;
+    });
+    if (prevVal) filterSelect.value = prevVal;
+  }
+
+  if (enrollSelect) {
+    const prevEnroll = enrollSelect.value;
+    enrollSelect.innerHTML = '';
+    currentCadenceBlueprints.forEach((bp) => {
+      enrollSelect.innerHTML += `<option value="${escapeHtml(bp.id)}">${escapeHtml(bp.name)} (${bp.steps?.length || 0} steps)</option>`;
+    });
+    if (prevEnroll) enrollSelect.value = prevEnroll;
+  }
+}
+
+function renderCadencePipeline() {
+  const container = document.getElementById('cadencePipelineList');
+  if (!container) return;
+
+  const searchQuery = (document.getElementById('cadenceSearchInput')?.value || '').trim().toLowerCase();
+  const statusFilter = document.getElementById('cadenceFilterStatus')?.value || 'all';
+  const blueprintFilter = document.getElementById('cadenceFilterBlueprint')?.value || 'all';
+
+  let list = [...currentCadenceEnrollments];
+
+  // Search filter
+  if (searchQuery) {
+    list = list.filter((e) => {
+      const name = (e.contactName || '').toLowerCase();
+      const phone = (e.phone || '').toLowerCase();
+      return name.includes(searchQuery) || phone.includes(searchQuery);
+    });
+  }
+
+  // Status filter
+  if (statusFilter !== 'all') {
+    list = list.filter((e) => e.status === statusFilter);
+  }
+
+  // Blueprint filter
+  if (blueprintFilter !== 'all') {
+    list = list.filter((e) => e.cadenceId === blueprintFilter);
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state-card" style="grid-column: 1 / -1; padding: 48px; text-align: center; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 12px;">
+        <div style="font-size: 40px; margin-bottom: 12px;">🎯</div>
+        <h3 style="margin: 0 0 6px; font-size: 17px; font-weight: 800; color: #0F172A;">No Leads in This Cadence View</h3>
+        <p style="margin: 0 0 18px; font-size: 13.5px; color: #64748B;">
+          ${searchQuery || statusFilter !== 'all' ? 'Try adjusting your search filters or status selection.' : 'Enroll leads into a multi-step sequence to automate your follow-ups.'}
+        </p>
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('btnOpenCadenceEnrollModal').click()" style="background: #6366F1;">
+          🚀 Enroll First Lead
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = '';
+  list.forEach((enr) => {
+    const card = document.createElement('div');
+    card.className = `cadence-pipeline-card ${enr.status}`;
+    card.setAttribute('data-enr-id', enr.id);
+
+    const bp = currentCadenceBlueprints.find((b) => b.id === enr.cadenceId);
+    const totalSteps = enr.totalSteps || bp?.steps?.length || 3;
+    const currentStepNum = Math.min((enr.currentStepIndex || 0) + 1, totalSteps);
+    const currentStepDef = bp?.steps ? bp.steps[enr.currentStepIndex] : null;
+    const currentStepTitle = currentStepDef?.title || `Step ${currentStepNum}`;
+    const progressPct = Math.round((currentStepNum / totalSteps) * 100);
+
+    // Format status and countdown
+    let statusBadgeClass = enr.status;
+    let statusLabel = enr.status.toUpperCase();
+    let dueBannerClass = 'cadence-next-due-banner';
+    let dueBannerText = '';
+
+    if (enr.status === CADENCE_STATUS.DUE) {
+      statusLabel = '⚠️ DUE NOW';
+      dueBannerClass += ' due';
+      dueBannerText = '⚠️ Ready to send! Delay has elapsed.';
+    } else if (enr.status === CADENCE_STATUS.AWAITING_REPLY) {
+      statusLabel = '⏳ AWAITING';
+      dueBannerText = `⏳ Next step in: <span class="cadence-live-countdown" data-due="${escapeHtml(enr.nextStepDueAt)}">${formatRemainingCadenceTime(enr.nextStepDueAt)}</span>`;
+    } else if (enr.status === CADENCE_STATUS.REPLIED) {
+      statusLabel = '🎉 REPLIED (HALTED)';
+      dueBannerText = `🎉 Contact replied on WhatsApp! Cadence permanently stopped.`;
+    } else if (enr.status === CADENCE_STATUS.COMPLETED) {
+      statusLabel = '✓ COMPLETED';
+      dueBannerText = `✓ All ${totalSteps} sequence steps have been sent.`;
+    } else if (enr.status === CADENCE_STATUS.PAUSED) {
+      statusLabel = '⏸️ PAUSED';
+      dueBannerText = `⏸️ Sequence is temporarily paused.`;
+    }
+
+    card.innerHTML = `
+      <div class="cadence-card-header">
+        <div>
+          <h4 class="cadence-contact-title">${escapeHtml(enr.contactName)}</h4>
+          <div class="cadence-contact-phone">${escapeHtml(enr.phone || enr.cleanPhone)}</div>
+        </div>
+        <span class="cadence-badge-status ${statusBadgeClass}">${statusLabel}</span>
+      </div>
+
+      <div class="cadence-blueprint-tag">🎯 ${escapeHtml(enr.cadenceName || bp?.name || 'Cadence')}</div>
+
+      <div>
+        <div class="cadence-step-info-row">
+          <span>Step ${currentStepNum} of ${totalSteps}</span>
+          <span style="color:#6366F1;">${escapeHtml(currentStepTitle)}</span>
+        </div>
+        <div class="cadence-progress-track">
+          <div class="cadence-progress-fill" style="width: ${progressPct}%"></div>
+        </div>
+      </div>
+
+      <div class="${dueBannerClass}">
+        ${dueBannerText}
+      </div>
+
+      <div class="cadence-pipeline-actions">
+        ${enr.status === CADENCE_STATUS.DUE || enr.status === CADENCE_STATUS.AWAITING_REPLY ? `
+          <button type="button" class="btn btn-sm btn-primary btn-cadence-send-now" style="background:#4F46E5;">
+            💬 Open & Review
+          </button>
+          <button type="button" class="btn btn-sm btn-outline btn-cadence-advance">
+            ✓ Mark Sent
+          </button>
+        ` : ''}
+
+        ${enr.status === CADENCE_STATUS.PAUSED ? `
+          <button type="button" class="btn btn-sm btn-outline btn-cadence-resume">
+            ▶️ Resume
+          </button>
+        ` : (enr.status === CADENCE_STATUS.AWAITING_REPLY || enr.status === CADENCE_STATUS.DUE ? `
+          <button type="button" class="btn btn-sm btn-outline btn-cadence-pause">
+            ⏸️ Pause
+          </button>
+        ` : '')}
+
+        ${enr.status !== CADENCE_STATUS.REPLIED && enr.status !== CADENCE_STATUS.COMPLETED ? `
+          <button type="button" class="btn btn-sm btn-outline btn-cadence-mark-replied" title="Stop sequence because contact replied">
+            🎉 Mark Replied
+          </button>
+        ` : ''}
+
+        <button type="button" class="btn btn-sm btn-outline btn-cadence-delete" style="color:#EF4444;" title="Cancel & delete enrollment">
+          ✕
+        </button>
+      </div>
+    `;
+
+    // Action button listeners
+    card.querySelector('.btn-cadence-send-now')?.addEventListener('click', () => {
+      openCadenceStepInWhatsApp(enr, bp);
+    });
+
+    card.querySelector('.btn-cadence-advance')?.addEventListener('click', async () => {
+      await advanceCadenceStep(enr.id);
+    });
+
+    card.querySelector('.btn-cadence-pause')?.addEventListener('click', async () => {
+      const paused = pauseEnrollment(enr);
+      await StorageService.saveCadenceEnrollment(paused);
+      await refreshCadencesData();
+    });
+
+    card.querySelector('.btn-cadence-resume')?.addEventListener('click', async () => {
+      const resumed = resumeEnrollment(enr);
+      await StorageService.saveCadenceEnrollment(resumed);
+      await refreshCadencesData();
+    });
+
+    card.querySelector('.btn-cadence-mark-replied')?.addEventListener('click', async () => {
+      const replied = recordContactReplied(enr);
+      await StorageService.saveCadenceEnrollment(replied);
+      await refreshCadencesData();
+    });
+
+    card.querySelector('.btn-cadence-delete')?.addEventListener('click', async () => {
+      if (confirm(`Remove ${enr.contactName} from ${enr.cadenceName}?`)) {
+        await StorageService.deleteCadenceEnrollment(enr.id);
+        await refreshCadencesData();
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+function updateCadencePipelineCountdowns() {
+  const countdownEls = document.querySelectorAll('.cadence-live-countdown');
+  countdownEls.forEach((el) => {
+    const dueIso = el.getAttribute('data-due');
+    if (dueIso) {
+      el.textContent = formatRemainingCadenceTime(dueIso);
+    }
+  });
+}
+
+function formatRemainingCadenceTime(dueAtIso) {
+  if (!dueAtIso) return '0s';
+  const diffMs = new Date(dueAtIso).getTime() - Date.now();
+  if (diffMs <= 0) return 'Due Now';
+  const totalSecs = Math.floor(diffMs / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  if (hours > 24) {
+    const days = Math.floor(hours / 24);
+    const remH = hours % 24;
+    return `${days}d ${remH}h ${mins}m ${secs}s`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${mins}m ${secs}s`;
+  }
+  return `${mins}m ${secs}s`;
+}
+
+function renderCadenceBlueprints() {
+  const container = document.getElementById('cadenceBlueprintsGrid');
+  if (!container) return;
+
+  container.innerHTML = '';
+  currentCadenceBlueprints.forEach((bp) => {
+    const card = document.createElement('div');
+    card.className = 'cadence-blueprint-card';
+
+    const enrolledCount = currentCadenceEnrollments.filter((e) => e.cadenceId === bp.id).length;
+    const steps = bp.steps || [];
+
+    // Step nodes visual timeline
+    let stepsFlowHtml = '';
+    steps.forEach((s, idx) => {
+      const delayLabel = idx === 0 ? 'Day 1' : `+${formatDelayText(s.delayDays, s.delayHours)}`;
+      stepsFlowHtml += `
+        <div class="cadence-step-node">
+          <span style="font-size:10px; color:#64748B;">${delayLabel}</span>
+          <span class="step-title">${escapeHtml(s.title || `Step ${idx + 1}`)}</span>
+        </div>
+      `;
+      if (idx < steps.length - 1) {
+        stepsFlowHtml += `<span class="cadence-step-arrow">➔</span>`;
+      }
+    });
+
+    card.innerHTML = `
+      <div class="cadence-blueprint-top">
+        <div>
+          <span class="cadence-blueprint-tag">${escapeHtml(bp.category || 'Outreach')}</span>
+          <h4 class="cadence-blueprint-name mt-1">${escapeHtml(bp.name)}</h4>
+        </div>
+        ${bp.isPreset ? `<span style="font-size:11px; background:#F1F5F9; color:#475569; padding:2px 6px; border-radius:4px; font-weight:700;">PRESET</span>` : ''}
+      </div>
+
+      <p class="cadence-blueprint-desc">${escapeHtml(bp.description || 'Automated multi-step follow-up sequence.')}</p>
+
+      <div class="cadence-steps-flow">
+        ${stepsFlowHtml}
+      </div>
+
+      <div class="cadence-blueprint-footer">
+        <span style="font-size:12.5px; color:#64748B; font-weight:600;">
+          👥 <strong>${enrolledCount}</strong> active lead${enrolledCount === 1 ? '' : 's'}
+        </span>
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="btn btn-sm btn-primary btn-enroll-this-cadence" style="background:#6366F1;">
+            🚀 Enroll Leads
+          </button>
+          <button type="button" class="btn btn-sm btn-outline btn-edit-this-cadence">
+            ✏️ Edit
+          </button>
+          ${!bp.isPreset ? `
+            <button type="button" class="btn btn-sm btn-outline btn-delete-this-cadence" style="color:#EF4444;">
+              🗑️
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.btn-enroll-this-cadence')?.addEventListener('click', () => {
+      openCadenceEnrollModal(bp.id);
+    });
+
+    card.querySelector('.btn-edit-this-cadence')?.addEventListener('click', () => {
+      openCadenceBuilderModal(bp);
+    });
+
+    card.querySelector('.btn-delete-this-cadence')?.addEventListener('click', async () => {
+      if (confirm(`Delete cadence blueprint "${bp.name}"?`)) {
+        await StorageService.deleteCadenceBlueprint(bp.id);
+        await refreshCadencesData();
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+// ========================================================
+// CADENCE BUILDER MODAL
+// ========================================================
+
+function openCadenceBuilderModal(blueprintToEdit = null) {
+  const modal = document.getElementById('cadenceModal');
+  const title = document.getElementById('cadenceModalTitle');
+  const idInput = document.getElementById('cadenceModalId');
+  const nameInput = document.getElementById('cadenceModalName');
+  const catInput = document.getElementById('cadenceModalCategory');
+  const descInput = document.getElementById('cadenceModalDesc');
+  const container = document.getElementById('cadenceStepsContainer');
+
+  if (!modal || !container) return;
+
+  container.innerHTML = '';
+
+  if (blueprintToEdit) {
+    title.textContent = `✏️ Edit Cadence: ${blueprintToEdit.name}`;
+    idInput.value = blueprintToEdit.id;
+    nameInput.value = blueprintToEdit.name;
+    catInput.value = blueprintToEdit.category || 'Sales Outreach';
+    descInput.value = blueprintToEdit.description || '';
+
+    (blueprintToEdit.steps || []).forEach((s, idx) => {
+      appendStepBuilderCard(container, s, idx);
+    });
+  } else {
+    title.textContent = '🎯 Create Follow-Up Cadence';
+    idInput.value = '';
+    nameInput.value = '';
+    catInput.value = 'Sales Outreach';
+    descInput.value = '';
+
+    // Default 3 starter steps
+    appendStepBuilderCard(container, { title: 'Initial Value Outreach', delayDays: 0, delayHours: 0, message: 'Hi {{name}}, noticed your work on {{project}}! Would you be open to a 5-min chat this week?' }, 0);
+    appendStepBuilderCard(container, { title: '3-Day Value Bump', delayDays: 3, delayHours: 72, message: 'Hey {{name}}, just bumping this in case it got buried! Let me know if you want to explore.' }, 1);
+    appendStepBuilderCard(container, { title: '7-Day Polite Break-Up', delayDays: 4, delayHours: 96, message: 'Hi {{name}}, assume priorities shifted right now! I will stop following up for now. Wishing you the best!' }, 2);
+  }
+
+  renumberStepBuilderCards();
+  modal.classList.remove('hidden');
+}
+
+function closeCadenceBuilderModal() {
+  document.getElementById('cadenceModal')?.classList.add('hidden');
+}
+
+function appendStepBuilderCard(container, stepData = {}, index = 0) {
+  const card = document.createElement('div');
+  card.className = 'cadence-step-builder-card';
+
+  card.innerHTML = `
+    <div class="cadence-step-builder-header">
+      <span class="cadence-step-number-pill">Step ${index + 1}</span>
+      <button type="button" class="btn-remove-step" title="Delete this step">✕ Remove Step</button>
+    </div>
+
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label>Step Title</label>
+        <input type="text" class="form-input step-input-title" value="${escapeHtml(stepData.title || `Step ${index + 1}`)}" placeholder="e.g. Value Bump">
+      </div>
+      <div class="form-group">
+        <label>Delay After Previous Step</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="number" min="0" class="form-input step-input-days" value="${stepData.delayDays !== undefined ? stepData.delayDays : 2}" style="width:75px;">
+          <span style="font-size:13px; color:#64748B;">days</span>
+          <input type="number" min="0" max="23" class="form-input step-input-hours" value="${stepData.delayHours ? stepData.delayHours % 24 : 0}" style="width:70px;">
+          <span style="font-size:13px; color:#64748B;">hours</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group mt-2">
+      <label>Message Content</label>
+      <div class="variable-pills" style="margin-bottom:6px;">
+        <span class="pill-label" style="font-size:11px;">Insert variable:</span>
+        <button type="button" class="btn-var-pill" data-step-var="{{name}}">{{name}}</button>
+        <button type="button" class="btn-var-pill" data-step-var="{{company}}">{{company}}</button>
+        <button type="button" class="btn-var-pill" data-step-var="{{project}}">{{project}}</button>
+      </div>
+      <textarea rows="3" class="form-textarea step-input-message" placeholder="Message content for this step...">${escapeHtml(stepData.message || '')}</textarea>
+      <div style="margin-top:4px; font-size:11.5px; color:#64748B;">
+        ${index === 0 ? '⚡ <strong>Step 1</strong> sends immediately or when scheduled.' : '🛡️ <strong>Stop-on-Reply:</strong> Only sends if contact hasn\'t replied yet.'}
+      </div>
+    </div>
+  `;
+
+  // Remove button
+  card.querySelector('.btn-remove-step')?.addEventListener('click', () => {
+    card.remove();
+    renumberStepBuilderCards();
+  });
+
+  // Variable pills
+  card.querySelectorAll('.btn-var-pill').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      const v = pill.getAttribute('data-step-var');
+      const textarea = card.querySelector('.step-input-message');
+      if (textarea && v) {
+        insertTextAtCursor(textarea, v);
+      }
+    });
+  });
+
+  container.appendChild(card);
+}
+
+function renumberStepBuilderCards() {
+  const container = document.getElementById('cadenceStepsContainer');
+  if (!container) return;
+  const cards = container.querySelectorAll('.cadence-step-builder-card');
+  cards.forEach((card, idx) => {
+    const pill = card.querySelector('.cadence-step-number-pill');
+    if (pill) pill.textContent = `Step ${idx + 1}`;
+    const removeBtn = card.querySelector('.btn-remove-step');
+    if (removeBtn) {
+      removeBtn.style.display = cards.length <= 1 ? 'none' : 'inline-block';
+    }
+  });
+}
+
+function insertTextAtCursor(input, text) {
+  const start = input.selectionStart || 0;
+  const end = input.selectionEnd || 0;
+  const val = input.value;
+  input.value = val.substring(0, start) + text + val.substring(end);
+  input.selectionStart = input.selectionEnd = start + text.length;
+  input.focus();
+}
+
+async function saveCadenceBlueprintFromModal() {
+  const idInput = document.getElementById('cadenceModalId');
+  const nameInput = document.getElementById('cadenceModalName');
+  const catInput = document.getElementById('cadenceModalCategory');
+  const descInput = document.getElementById('cadenceModalDesc');
+  const container = document.getElementById('cadenceStepsContainer');
+
+  const name = nameInput?.value?.trim();
+  if (!name) {
+    alert('Please enter a Cadence Name.');
+    nameInput?.focus();
+    return;
+  }
+
+  const cards = container?.querySelectorAll('.cadence-step-builder-card') || [];
+  if (cards.length === 0) {
+    alert('Cadence must contain at least 1 step.');
+    return;
+  }
+
+  const steps = [];
+  cards.forEach((c, idx) => {
+    const title = c.querySelector('.step-input-title')?.value?.trim() || `Step ${idx + 1}`;
+    const days = parseInt(c.querySelector('.step-input-days')?.value, 10) || 0;
+    const hours = parseInt(c.querySelector('.step-input-hours')?.value, 10) || 0;
+    const totalHours = (days * 24) + hours;
+    const msg = c.querySelector('.step-input-message')?.value?.trim() || '';
+
+    steps.push({
+      stepIndex: idx,
+      stepNumber: idx + 1,
+      title: title,
+      delayDays: days,
+      delayHours: totalHours,
+      message: msg,
+      condition: idx === 0 ? 'always' : 'if_no_reply'
+    });
+  });
+
+  const blueprint = createCadenceBlueprint({
+    id: idInput?.value || undefined,
+    name: name,
+    category: catInput?.value || 'Sales Outreach',
+    description: descInput?.value || '',
+    steps: steps
+  });
+
+  await StorageService.saveCadenceBlueprint(blueprint);
+  closeCadenceBuilderModal();
+  await refreshCadencesData();
+}
+
+// ========================================================
+// CADENCE ENROLL MODAL (SINGLE & CSV BATCH)
+// ========================================================
+
+function openCadenceEnrollModal(preselectedCadenceId = null) {
+  const modal = document.getElementById('cadenceEnrollModal');
+  const select = document.getElementById('cadenceEnrollSelect');
+  if (!modal) return;
+
+  if (select && preselectedCadenceId) {
+    select.value = preselectedCadenceId;
+  }
+
+  // Clear single inputs
+  const nameInput = document.getElementById('enrollSingleName');
+  const phoneInput = document.getElementById('enrollSinglePhone');
+  const compInput = document.getElementById('enrollSingleCompany');
+  const projInput = document.getElementById('enrollSingleProject');
+  if (nameInput) nameInput.value = '';
+  if (phoneInput) phoneInput.value = '';
+  if (compInput) compInput.value = '';
+  if (projInput) projInput.value = '';
+
+  parsedCadenceCsvLeads = [];
+  const previewEl = document.getElementById('cadenceCsvPreview');
+  if (previewEl) {
+    previewEl.textContent = '';
+    previewEl.classList.add('hidden');
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeCadenceEnrollModal() {
+  document.getElementById('cadenceEnrollModal')?.classList.add('hidden');
+}
+
+function setupCadenceCsvDropzone() {
+  const dropzone = document.getElementById('cadenceCsvDropzone');
+  const fileInput = document.getElementById('cadenceCsvFileInput');
+  if (!dropzone || !fileInput) return;
+
+  dropzone.addEventListener('click', () => fileInput.click());
+
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = '#6366F1';
+    dropzone.style.background = '#EEF2FF';
+  });
+
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.style.borderColor = '#CBD5E1';
+    dropzone.style.background = 'transparent';
+  });
+
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = '#CBD5E1';
+    dropzone.style.background = 'transparent';
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleCadenceCsvFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleCadenceCsvFile(e.target.files[0]);
+    }
+  });
+}
+
+function handleCadenceCsvFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const text = e.target.result;
+      const { headers, rows } = parseCSV(text);
+      const cols = autoDetectColumns(headers);
+
+      if (!cols.phone) {
+        alert('Could not detect a Phone column in your CSV. Please ensure your CSV contains a phone number header.');
+        return;
+      }
+
+      parsedCadenceCsvLeads = rows.map((r) => {
+        const phone = r[cols.phone] || '';
+        const name = cols.name ? r[cols.name] : 'Contact';
+        return {
+          name: name,
+          phone: phone,
+          variables: r
+        };
+      }).filter((c) => Boolean(normalizeCadencePhone(c.phone)));
+
+      const previewEl = document.getElementById('cadenceCsvPreview');
+      if (previewEl) {
+        previewEl.textContent = `✅ Successfully extracted ${parsedCadenceCsvLeads.length} valid contacts from CSV!`;
+        previewEl.classList.remove('hidden');
+      }
+    } catch (err) {
+      alert('Error parsing CSV file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function submitCadenceEnrollment() {
+  const cadenceId = document.getElementById('cadenceEnrollSelect')?.value;
+  const cadence = currentCadenceBlueprints.find((b) => b.id === cadenceId);
+
+  if (!cadence) {
+    alert('Please select a valid Cadence.');
+    return;
+  }
+
+  const isBatchMode = !document.getElementById('enrollModeBatch')?.classList.contains('hidden');
+
+  let leadsToEnroll = [];
+
+  if (isBatchMode) {
+    if (parsedCadenceCsvLeads.length === 0) {
+      alert('Please upload a CSV file with valid contacts first.');
+      return;
+    }
+    leadsToEnroll = parsedCadenceCsvLeads;
+  } else {
+    const name = document.getElementById('enrollSingleName')?.value?.trim();
+    const phone = document.getElementById('enrollSinglePhone')?.value?.trim();
+    const company = document.getElementById('enrollSingleCompany')?.value?.trim();
+    const project = document.getElementById('enrollSingleProject')?.value?.trim();
+
+    if (!phone) {
+      alert('Please enter a WhatsApp phone number.');
+      document.getElementById('enrollSinglePhone')?.focus();
+      return;
+    }
+
+    leadsToEnroll = [{
+      name: name || 'Contact',
+      phone: phone,
+      company: company,
+      project: project
+    }];
+  }
+
+  const newEnrollments = enrollBatchInCadence(cadence, leadsToEnroll, currentCadenceEnrollments);
+  if (newEnrollments.length === 0) {
+    alert('No new leads enrolled (contacts may already be actively enrolled in this cadence).');
+    return;
+  }
+
+  await StorageService.saveCadenceEnrollmentsBatch(newEnrollments);
+
+  // Schedule background alarms for any items with scheduled nextStepDueAt
+  newEnrollments.forEach((enr) => {
+    if (enr.nextStepDueAt && enr.status === CADENCE_STATUS.AWAITING_REPLY) {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+        chrome.runtime.sendMessage({
+          type: 'SCHEDULE_CADENCE_ALARM',
+          enrollmentId: enr.id,
+          dueAt: enr.nextStepDueAt
+        }).catch(() => {});
+      }
+    }
+  });
+
+  closeCadenceEnrollModal();
+  await refreshCadencesData();
+  alert(`🎉 Successfully enrolled ${newEnrollments.length} lead${newEnrollments.length === 1 ? '' : 's'} into "${cadence.name}"!`);
+}
+
+// ========================================================
+// PIPELINE CARD ACTIONS & SIDE PANEL INTEGRATION
+// ========================================================
+
+function openCadenceStepInWhatsApp(enr, bp) {
+  const cadence = bp || currentCadenceBlueprints.find((b) => b.id === enr.cadenceId);
+  const step = cadence?.steps ? cadence.steps[enr.currentStepIndex] : null;
+  const messageText = step ? interpolateCadenceMessage(step.message, enr.variables) : '';
+  const cleanPhone = normalizeCadencePhone(enr.phone || enr.cleanPhone);
+
+  const url = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(messageText)}`;
+  window.open(url, '_blank');
+}
+
+async function advanceCadenceStep(enrollmentId) {
+  const enr = currentCadenceEnrollments.find((e) => e.id === enrollmentId);
+  if (!enr) return;
+  const bp = currentCadenceBlueprints.find((b) => b.id === enr.cadenceId);
+
+  try {
+    const updated = recordStepSent(enr, bp);
+    await StorageService.saveCadenceEnrollment(updated);
+
+    if (updated.nextStepDueAt && updated.status === CADENCE_STATUS.AWAITING_REPLY) {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+        chrome.runtime.sendMessage({
+          type: 'SCHEDULE_CADENCE_ALARM',
+          enrollmentId: updated.id,
+          dueAt: updated.nextStepDueAt
+        }).catch(() => {});
+      }
+    }
+
+    await refreshCadencesData();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function queueDueCadencesInSidePanel() {
+  const dueEnrollments = currentCadenceEnrollments.filter((e) => e.status === CADENCE_STATUS.DUE);
+  if (dueEnrollments.length === 0) {
+    alert('ℹ️ No cadence follow-ups are due right now! Check back when scheduled delays have elapsed.');
+    return;
+  }
+
+  // Package due follow-ups into a batch for the Side Panel assembly line
+  const recipients = dueEnrollments.map((enr) => {
+    const bp = currentCadenceBlueprints.find((b) => b.id === enr.cadenceId);
+    const step = bp?.steps ? bp.steps[enr.currentStepIndex] : null;
+    const msg = step ? interpolateCadenceMessage(step.message, enr.variables) : 'Hi {{name}}!';
+
+    return {
+      name: enr.contactName,
+      phone: enr.phone || enr.cleanPhone,
+      cleanPhone: enr.cleanPhone,
+      status: 'pending',
+      renderedMessage: msg,
+      cadenceEnrollmentId: enr.id
+    };
+  });
+
+  const dueBatch = {
+    id: `batch_cadence_due_${Date.now()}`,
+    title: `🎯 Due Cadence Follow-Ups (${dueEnrollments.length} leads)`,
+    messageTemplate: 'Hi {{name}}',
+    recipients: recipients,
+    status: BATCH_STATUS.IN_PROGRESS,
+    scheduledAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    isCadenceBatch: true
+  };
+
+  await StorageService.saveBatch(dueBatch);
+
+  // Launch Side Panel
+  if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+    chrome.runtime.sendMessage({ type: 'OPEN_WORKSPACE', batchId: dueBatch.id }).catch(() => {});
+  }
+
+  alert(`🚀 Queued ${dueEnrollments.length} due follow-ups into the Side Panel! Open WhatsApp Web to review and send.`);
+}
+

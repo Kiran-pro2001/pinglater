@@ -57,6 +57,16 @@
           <span id="navSnoozeBadge" class="nav-badge hidden" style="background:#22C55E;">0</span>
         </button>
 
+        <button class="nav-item" data-tab="tab-cadences">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="6"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+          </svg>
+          Follow-Up Cadences
+          <span id="navCadenceBadge" class="nav-badge hidden" style="background:#6366F1; color:#FFFFFF;">0</span>
+        </button>
+
         <button class="nav-item" data-tab="tab-templates">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -727,6 +737,117 @@
       </section>
 
       <!-- ========================================================
+           TAB: MULTI-STEP FOLLOW-UP CADENCES (FEATURE 5)
+           ======================================================== -->
+      <section id="tab-cadences" class="tab-pane">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line" style="background: linear-gradient(90deg, #6366F1, #8B5CF6);"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>🎯 Multi-Step Follow-Up Cadences</h2>
+              <p>Automate 3-step drip outreach (Day 1 ➔ Day 3 ➔ Day 7). Sequences automatically stop the second a lead replies.</p>
+            </div>
+            <div class="page-top-actions">
+              <button id="btnOpenCadenceModal" class="btn btn-outline" type="button">
+                <span>➕</span> Create New Cadence
+              </button>
+              <button id="btnOpenCadenceEnrollModal" class="btn btn-primary" type="button" style="background: #6366F1;">
+                <span>🚀</span> Enroll Contacts
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon" style="background: #EEF2FF; color: #4F46E5;">🎯</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Active Cadences</span>
+              <strong id="cadenceMetricActiveCadences" class="kpi-value">3</strong>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon" style="background: #F0FDF4; color: #16A34A;">👥</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Total Leads Enrolled</span>
+              <strong id="cadenceMetricTotalEnrolled" class="kpi-value">0</strong>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon" style="background: #FEF3C7; color: #D97706;">⚠️</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Due for Follow-Up</span>
+              <strong id="cadenceMetricDueNow" class="kpi-value">0</strong>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon" style="background: #FDF2F8; color: #DB2777;">🎉</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Reply Rate %</span>
+              <strong id="cadenceMetricReplyRate" class="kpi-value">0%</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- View Navigation: Pipeline vs Blueprints -->
+        <div class="cadence-nav-tabs-wrapper mt-4">
+          <div class="cadence-tab-buttons">
+            <button type="button" class="btn-cadence-subtab active" data-cadence-view="pipeline">
+              📋 Active Leads Pipeline (<span id="cadencePipelineBadge">0</span>)
+            </button>
+            <button type="button" class="btn-cadence-subtab" data-cadence-view="blueprints">
+              📐 Cadence Blueprints (<span id="cadenceBlueprintsBadge">3</span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- VIEW 1: ACTIVE PIPELINE -->
+        <div id="cadenceViewPipeline" class="cadence-view-panel mt-3">
+          <!-- Filter Toolbar -->
+          <div class="table-toolbar">
+            <div class="search-box">
+              <input type="text" id="cadenceSearchInput" placeholder="Search lead name or phone..." class="form-input">
+            </div>
+
+            <div class="filter-actions">
+              <select id="cadenceFilterStatus" class="form-select">
+                <option value="all">All Statuses</option>
+                <option value="due">⚠️ Due Now (Ready to Send)</option>
+                <option value="awaiting">⏳ Awaiting Reply (Delayed)</option>
+                <option value="replied">🎉 Replied (Halted / Success)</option>
+                <option value="completed">✓ Completed (All Steps Sent)</option>
+                <option value="paused">⏸️ Paused</option>
+              </select>
+
+              <select id="cadenceFilterBlueprint" class="form-select">
+                <option value="all">All Cadence Sequences</option>
+              </select>
+
+              <button type="button" id="btnQueueDueCadences" class="btn btn-primary" style="background: #4F46E5;">
+                🚀 Queue Due in Side Panel
+              </button>
+            </div>
+          </div>
+
+          <!-- Pipeline List Container -->
+          <div id="cadencePipelineList" class="cadence-pipeline-grid mt-3">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- VIEW 2: CADENCE BLUEPRINTS -->
+        <div id="cadenceViewBlueprints" class="cadence-view-panel mt-3 hidden">
+          <div id="cadenceBlueprintsGrid" class="cadence-blueprints-grid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
            TAB: MESSAGE TEMPLATES MANAGER
            ======================================================== -->
       <section id="tab-templates" class="tab-pane">
@@ -1075,6 +1196,122 @@
       <div class="modal-footer">
         <button id="btnCancelSnippetModal" class="btn btn-outline">Cancel</button>
         <button id="btnSaveSnippetModal" class="btn btn-primary">💾 Save Snippet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create / Edit Cadence Blueprint -->
+  <div id="cadenceModal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 id="cadenceModalTitle">🎯 Create Follow-Up Cadence</h3>
+        <button id="btnCloseCadenceModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cadenceModalId">
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="cadenceModalName">Cadence Name <span class="required">*</span></label>
+            <input type="text" id="cadenceModalName" class="form-input" placeholder="e.g. 3-Step Agency Outreach">
+          </div>
+          <div class="form-group">
+            <label for="cadenceModalCategory">Category</label>
+            <select id="cadenceModalCategory" class="form-select">
+              <option value="Sales Outreach">Sales Outreach</option>
+              <option value="Client Closing">Client Closing</option>
+              <option value="Lead Nurture">Lead Nurture</option>
+              <option value="Custom">Custom</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group mt-2">
+          <label for="cadenceModalDesc">Description</label>
+          <input type="text" id="cadenceModalDesc" class="form-input" placeholder="Brief note about when to use this sequence">
+        </div>
+
+        <div class="mt-4">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h4 style="margin:0; font-size:15px; font-weight:700; color:#0F172A;">Sequence Steps</h4>
+            <button type="button" id="btnAddCadenceStep" class="btn btn-outline btn-sm">➕ Add Another Step</button>
+          </div>
+
+          <div id="cadenceStepsContainer" class="cadence-steps-builder-list">
+            <!-- Dynamically populated step cards -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelCadenceModal" class="btn btn-outline" type="button">Cancel</button>
+        <button id="btnSaveCadenceModal" class="btn btn-primary" type="button" style="background:#6366F1;">💾 Save Cadence</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Enroll Contacts into Cadence -->
+  <div id="cadenceEnrollModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🚀 Enroll Contacts into Cadence</h3>
+        <button id="btnCloseCadenceEnrollModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="cadenceEnrollSelect">Select Cadence Blueprint <span class="required">*</span></label>
+          <select id="cadenceEnrollSelect" class="form-select">
+            <!-- Dynamically populated with blueprints -->
+          </select>
+        </div>
+
+        <div class="enroll-mode-tabs mt-3" style="display:flex; gap:8px; border-bottom:1px solid #E2E8F0; padding-bottom:8px;">
+          <button type="button" class="btn-enroll-tab active" data-enroll-mode="single">Single Contact</button>
+          <button type="button" class="btn-enroll-tab" data-enroll-mode="batch">Batch CSV Upload</button>
+        </div>
+
+        <!-- Single Contact Mode -->
+        <div id="enrollModeSingle" class="enroll-mode-pane mt-3">
+          <div class="form-group">
+            <label for="enrollSingleName">Contact Name <span class="required">*</span></label>
+            <input type="text" id="enrollSingleName" class="form-input" placeholder="e.g. Rahul Sharma">
+          </div>
+          <div class="form-group mt-2">
+            <label for="enrollSinglePhone">WhatsApp Phone Number <span class="required">*</span></label>
+            <input type="text" id="enrollSinglePhone" class="form-input" placeholder="e.g. +91 98765 43210">
+          </div>
+          <div class="form-grid-2 mt-2">
+            <div class="form-group">
+              <label for="enrollSingleCompany">Company / Org (Optional)</label>
+              <input type="text" id="enrollSingleCompany" class="form-input" placeholder="e.g. TechCorp">
+            </div>
+            <div class="form-group">
+              <label for="enrollSingleProject">Project / Topic (Optional)</label>
+              <input type="text" id="enrollSingleProject" class="form-input" placeholder="e.g. Landing Page">
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch CSV Mode -->
+        <div id="enrollModeBatch" class="enroll-mode-pane mt-3 hidden">
+          <div class="csv-dropzone" id="cadenceCsvDropzone" style="border:2px dashed #CBD5E1; border-radius:10px; padding:24px; text-align:center; cursor:pointer;">
+            <input type="file" id="cadenceCsvFileInput" accept=".csv" class="file-input-hidden" style="display:none;">
+            <div style="font-size:32px; margin-bottom:8px;">📁</div>
+            <p style="margin:0; font-weight:600; color:#334155;">Click to upload CSV or drag and drop</p>
+            <p style="margin:4px 0 0; font-size:12px; color:#64748B;">Requires Name and Phone columns. Custom columns will be used as variables.</p>
+          </div>
+          <div id="cadenceCsvPreview" class="mt-2 hidden" style="font-size:13px; color:#15803D; font-weight:600;"></div>
+        </div>
+
+        <div class="checkbox-group mt-3" style="background:#F8FAFC; padding:10px 12px; border-radius:8px; border:1px solid #E2E8F0;">
+          <label class="checkbox-row" style="font-size:12.5px; margin:0;">
+            <input type="checkbox" id="enrollSendStep1Now" checked>
+            <span><strong>Send Step 1 Immediately</strong> (or queue as Due)</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelCadenceEnrollModal" class="btn btn-outline" type="button">Cancel</button>
+        <button id="btnSubmitCadenceEnroll" class="btn btn-primary" type="button" style="background:#6366F1;">🚀 Enroll Leads</button>
       </div>
     </div>
   </div>

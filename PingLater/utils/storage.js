@@ -4,6 +4,8 @@
  * Supports chrome.storage.local with browser localStorage fallback for development/testing.
  */
 
+import { PRESET_CADENCES, CADENCE_STATUS, recordContactReplied, checkDueEnrollments, normalizeCadencePhone } from './cadence.js';
+
 // Storage keys
 export const STORAGE_KEYS = {
   BATCHES: 'pinglater_batches',
@@ -11,7 +13,9 @@ export const STORAGE_KEYS = {
   CONTACTS: 'pinglater_contacts',
   SETTINGS: 'pinglater_settings',
   LOGS: 'pinglater_logs',
-  SNOOZED_CHATS: 'pinglater_snoozed_chats'
+  SNOOZED_CHATS: 'pinglater_snoozed_chats',
+  CADENCE_BLUEPRINTS: 'pinglater_cadence_blueprints',
+  CADENCE_ENROLLMENTS: 'pinglater_cadence_enrollments'
 };
 
 // Snooze Status for "Awaiting Reply" Tracker (Feature 2)
@@ -650,6 +654,129 @@ export class StorageService {
   }
 
   // ==========================================
+  // MULTI-STEP CADENCES (Feature 5)
+  // ==========================================
+  static async getCadenceBlueprints() {
+    const list = await StorageAdapter.get(STORAGE_KEYS.CADENCE_BLUEPRINTS);
+    if (!list || list.length === 0) {
+      await StorageAdapter.set(STORAGE_KEYS.CADENCE_BLUEPRINTS, PRESET_CADENCES);
+      return PRESET_CADENCES;
+    }
+    return list;
+  }
+
+  static async saveCadenceBlueprint(blueprint) {
+    const list = await this.getCadenceBlueprints();
+    const index = list.findIndex((c) => c.id === blueprint.id);
+    if (index >= 0) {
+      list[index] = { ...blueprint, updatedAt: new Date().toISOString() };
+    } else {
+      list.unshift(blueprint);
+    }
+    await StorageAdapter.set(STORAGE_KEYS.CADENCE_BLUEPRINTS, list);
+    return blueprint;
+  }
+
+  static async deleteCadenceBlueprint(id) {
+    const list = await this.getCadenceBlueprints();
+    const updated = list.filter((c) => c.id !== id);
+    await StorageAdapter.set(STORAGE_KEYS.CADENCE_BLUEPRINTS, updated);
+    return true;
+  }
+
+  static async getCadenceEnrollments() {
+    const list = await StorageAdapter.get(STORAGE_KEYS.CADENCE_ENROLLMENTS);
+    return list || [];
+  }
+
+  static async saveCadenceEnrollment(enrollment) {
+    const list = await this.getCadenceEnrollments();
+    const index = list.findIndex((e) => e.id === enrollment.id);
+    if (index >= 0) {
+      list[index] = { ...enrollment, updatedAt: new Date().toISOString() };
+    } else {
+      list.unshift(enrollment);
+    }
+    await StorageAdapter.set(STORAGE_KEYS.CADENCE_ENROLLMENTS, list);
+    return enrollment;
+  }
+
+  static async saveCadenceEnrollmentsBatch(newEnrollments = []) {
+    if (!newEnrollments.length) return [];
+    const list = await this.getCadenceEnrollments();
+    const map = new Map(list.map((e) => [e.id, e]));
+    for (const enr of newEnrollments) {
+      map.set(enr.id, enr);
+    }
+    const combined = Array.from(map.values());
+    await StorageAdapter.set(STORAGE_KEYS.CADENCE_ENROLLMENTS, combined);
+    return combined;
+  }
+
+  static async deleteCadenceEnrollment(id) {
+    const list = await this.getCadenceEnrollments();
+    const updated = list.filter((e) => e.id !== id);
+    await StorageAdapter.set(STORAGE_KEYS.CADENCE_ENROLLMENTS, updated);
+    return true;
+  }
+
+  /**
+   * Stop-on-Reply handler:
+   * When an incoming reply is detected for a contact, automatically transitions
+   * all active/due/awaiting cadence enrollments for that contact to 'replied'.
+   */
+  static async recordCadenceContactReply(phone, contactName, replyTimestamp = new Date()) {
+    const list = await this.getCadenceEnrollments();
+    if (!list || list.length === 0) return { modifiedCount: 0, haltedEnrollments: [] };
+
+    const cleanPhone = normalizeCadencePhone(phone);
+    const lowerName = (contactName || '').trim().toLowerCase();
+    const haltedEnrollments = [];
+
+    const updatedList = list.map((enr) => {
+      // Terminal states already halted
+      if ([CADENCE_STATUS.REPLIED, CADENCE_STATUS.COMPLETED, CADENCE_STATUS.CANCELLED].includes(enr.status)) {
+        return enr;
+      }
+
+      const enrCleanPhone = normalizeCadencePhone(enr.cleanPhone || enr.phone);
+      const enrLowerName = (enr.contactName || '').trim().toLowerCase();
+
+      let isMatch = false;
+      if (cleanPhone && enrCleanPhone && (cleanPhone === enrCleanPhone || cleanPhone.endsWith(enrCleanPhone) || enrCleanPhone.endsWith(cleanPhone))) {
+        isMatch = true;
+      } else if (lowerName && enrLowerName && (lowerName === enrLowerName || lowerName.includes(enrLowerName) || enrLowerName.includes(lowerName))) {
+        isMatch = true;
+      }
+
+      if (isMatch) {
+        const halted = recordContactReplied(enr, replyTimestamp);
+        haltedEnrollments.push(halted);
+        return halted;
+      }
+      return enr;
+    });
+
+    if (haltedEnrollments.length > 0) {
+      await StorageAdapter.set(STORAGE_KEYS.CADENCE_ENROLLMENTS, updatedList);
+    }
+
+    return { modifiedCount: haltedEnrollments.length, haltedEnrollments };
+  }
+
+  /**
+   * Evaluates due cadence follow-ups and returns items ready for the Side Panel.
+   */
+  static async refreshDueCadenceEnrollments(referenceTime = new Date()) {
+    const list = await this.getCadenceEnrollments();
+    const { updatedList, dueItems } = checkDueEnrollments(list, referenceTime);
+    if (dueItems.length > 0) {
+      await StorageAdapter.set(STORAGE_KEYS.CADENCE_ENROLLMENTS, updatedList);
+    }
+    return { all: updatedList, due: dueItems };
+  }
+
+  // ==========================================
   // BACKUP & RESTORE
   // ==========================================
   static async exportAllData() {
@@ -658,15 +785,19 @@ export class StorageService {
     const batches = await this.getBatches();
     const contacts = await this.getContacts();
     const snoozes = await this.getSnoozes();
+    const cadenceBlueprints = await this.getCadenceBlueprints();
+    const cadenceEnrollments = await this.getCadenceEnrollments();
 
     return {
-      version: '1.0.0',
+      version: '1.1.0',
       exportedAt: new Date().toISOString(),
       settings,
       templates,
       batches,
       contacts,
-      snoozes
+      snoozes,
+      cadenceBlueprints,
+      cadenceEnrollments
     };
   }
 
@@ -677,6 +808,8 @@ export class StorageService {
     if (payload.batches) await StorageAdapter.set(STORAGE_KEYS.BATCHES, payload.batches);
     if (payload.contacts) await StorageAdapter.set(STORAGE_KEYS.CONTACTS, payload.contacts);
     if (payload.snoozes) await StorageAdapter.set(STORAGE_KEYS.SNOOZED_CHATS, payload.snoozes);
+    if (payload.cadenceBlueprints) await StorageAdapter.set(STORAGE_KEYS.CADENCE_BLUEPRINTS, payload.cadenceBlueprints);
+    if (payload.cadenceEnrollments) await StorageAdapter.set(STORAGE_KEYS.CADENCE_ENROLLMENTS, payload.cadenceEnrollments);
     return true;
   }
 

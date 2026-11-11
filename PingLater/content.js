@@ -838,6 +838,16 @@
     showPingLaterToast('🎉', `Marked as replied! Follow-up reminder cleared.`);
     updateSnoozePill();
     updateLeftChatListBadges();
+
+    // 5. Notify Cadence Engine (Feature 5: Stop-on-Reply)
+    const targetContact = memItem || getCurrentChatInfo();
+    if (targetContact && typeof chrome !== 'undefined' && chrome.runtime?.id) {
+      chrome.runtime.sendMessage({
+        type: 'CADENCE_CONTACT_REPLIED',
+        phone: targetContact.phone || '',
+        name: targetContact.contactName || targetContact.title || ''
+      }).catch(() => {});
+    }
   }
 
   function cancelSnooze(id) {
