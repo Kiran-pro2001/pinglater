@@ -4,7 +4,7 @@
  * 1-to-1 Follow-ups, Templates Manager, and Settings/Backup.
  */
 
-import { StorageService, BATCH_STATUS, RECIPIENT_STATUS } from './utils/storage.js';
+import { StorageService, BATCH_STATUS, RECIPIENT_STATUS, SNOOZE_STATUS } from './utils/storage.js';
 import { parseCSV, autoDetectColumns, normalizePhoneNumber, parsePastedText, processRecipientsList, COMMON_COUNTRY_CODES } from './utils/normalizer.js';
 import { extractVariables, renderTemplate, validateBatchVariables, renderBatchRecipients } from './utils/template.js';
 import { WhatsAppOrchestrator } from './utils/whatsapp.js';
@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupWizardTab();
   setupQuickPingTab();
   setupTemplatesTab();
+  setupSnoozeTab();
   setupSettingsTab();
   setupEditScheduleModal();
   setupSkippedModal();
@@ -44,6 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load initial data
   await refreshBatchesList();
   await refreshTemplatesList();
+  await refreshSnoozeView();
   populateSettingsForm();
   updateLiveClock();
   setInterval(updateLiveClock, 1000);
@@ -95,6 +97,7 @@ function switchTab(tabId) {
 
   if (tabId === 'tab-batches') refreshBatchesList();
   if (tabId === 'tab-templates') refreshTemplatesList();
+  if (tabId === 'tab-snooze') refreshSnoozeView();
   if (tabId === 'tab-wizard') checkWizardActiveBatch();
 }
 
@@ -1727,6 +1730,223 @@ function openTemplateModal(tpl = null) {
 
 function closeTemplateModal() {
   document.getElementById('templateModal').classList.add('hidden');
+}
+
+// ==========================================
+// TAB: "AWAITING REPLY" SMART SNOOZE (FEATURE 2)
+// ==========================================
+
+let currentSnoozes = [];
+let currentSnoozeFilter = 'all';
+
+function setupSnoozeTab() {
+  // Filter pills
+  const pills = document.querySelectorAll('#snoozeFilterPills .pill');
+  pills.forEach((p) => {
+    p.addEventListener('click', () => {
+      pills.forEach((x) => x.classList.remove('active'));
+      p.classList.add('active');
+      currentSnoozeFilter = p.dataset.filter || 'all';
+      renderSnoozeCards();
+    });
+  });
+
+  // Modal open / close
+  document.getElementById('btnOpenNewSnoozeModal')?.addEventListener('click', () => {
+    document.getElementById('snoozeContactName').value = '';
+    document.getElementById('snoozePhone').value = '';
+    document.getElementById('snoozeNote').value = '';
+    document.getElementById('snoozeHours').value = '48';
+    document.getElementById('newSnoozeModal')?.classList.remove('hidden');
+  });
+
+  document.getElementById('btnCloseNewSnoozeModal')?.addEventListener('click', () => {
+    document.getElementById('newSnoozeModal')?.classList.add('hidden');
+  });
+
+  document.getElementById('btnCancelNewSnoozeModal')?.addEventListener('click', () => {
+    document.getElementById('newSnoozeModal')?.classList.add('hidden');
+  });
+
+  // Save new snooze
+  document.getElementById('btnSaveNewSnoozeModal')?.addEventListener('click', async () => {
+    const name = document.getElementById('snoozeContactName').value.trim();
+    const rawPhone = document.getElementById('snoozePhone').value.trim();
+    const note = document.getElementById('snoozeNote').value.trim();
+    const hours = parseInt(document.getElementById('snoozeHours').value, 10) || 48;
+
+    if (!name && !rawPhone) {
+      alert('Please enter at least a contact name or phone number.');
+      return;
+    }
+
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const now = new Date();
+    const dueAt = new Date(now.getTime() + hours * 3600000).toISOString();
+
+    await StorageService.saveSnooze({
+      contactName: name || `+${cleanPhone}`,
+      phone: cleanPhone,
+      cleanIdentifier: cleanPhone || name.toLowerCase(),
+      snoozedAt: now.toISOString(),
+      dueAt,
+      durationHours: hours,
+      lastMessageSnippet: note,
+      status: SNOOZE_STATUS.AWAITING
+    });
+
+    document.getElementById('newSnoozeModal')?.classList.add('hidden');
+    await refreshSnoozeView();
+  });
+}
+
+async function refreshSnoozeView() {
+  currentSnoozes = await StorageService.getSnoozes();
+  const now = Date.now();
+
+  let awaitingCount = 0;
+  let dueCount = 0;
+  let repliedCount = 0;
+
+  currentSnoozes.forEach((s) => {
+    if (s.status === SNOOZE_STATUS.REPLIED) {
+      repliedCount++;
+    } else if (s.status === SNOOZE_STATUS.AWAITING) {
+      if (new Date(s.dueAt).getTime() <= now) {
+        dueCount++;
+      } else {
+        awaitingCount++;
+      }
+    } else if (s.status === SNOOZE_STATUS.DUE) {
+      dueCount++;
+    }
+  });
+
+  // Update KPI counters
+  const elAwaiting = document.getElementById('statAwaitingCount');
+  if (elAwaiting) elAwaiting.textContent = String(awaitingCount);
+
+  const elDue = document.getElementById('statDueCount');
+  if (elDue) elDue.textContent = String(dueCount);
+
+  const elReplied = document.getElementById('statRepliedCount');
+  if (elReplied) elReplied.textContent = String(repliedCount);
+
+  // Update nav badge
+  const navBadge = document.getElementById('navSnoozeBadge');
+  if (navBadge) {
+    const totalActive = awaitingCount + dueCount;
+    if (totalActive > 0) {
+      navBadge.textContent = String(totalActive);
+      navBadge.classList.remove('hidden');
+    } else {
+      navBadge.classList.add('hidden');
+    }
+  }
+
+  renderSnoozeCards();
+}
+
+function renderSnoozeCards() {
+  const container = document.getElementById('snoozeCardsContainer');
+  if (!container) return;
+
+  const now = Date.now();
+
+  let filtered = currentSnoozes;
+  if (currentSnoozeFilter === 'awaiting') {
+    filtered = currentSnoozes.filter((s) => s.status === SNOOZE_STATUS.AWAITING && new Date(s.dueAt).getTime() > now);
+  } else if (currentSnoozeFilter === 'due') {
+    filtered = currentSnoozes.filter((s) => s.status === SNOOZE_STATUS.DUE || (s.status === SNOOZE_STATUS.AWAITING && new Date(s.dueAt).getTime() <= now));
+  } else if (currentSnoozeFilter === 'replied') {
+    filtered = currentSnoozes.filter((s) => s.status === SNOOZE_STATUS.REPLIED);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 12px;">
+        <div style="font-size: 36px; margin-bottom: 8px;">💤</div>
+        <h4 style="font-size: 16px; font-weight: 700; color: #0F172A; margin: 0 0 6px 0;">No snoozed contacts in this view</h4>
+        <p style="font-size: 13px; color: #64748B; margin: 0 0 16px 0;">Use the "+ Track New Contact" button or click "Snooze if no reply" directly in WhatsApp Web.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = '';
+
+  filtered.forEach((s) => {
+    const card = document.createElement('div');
+    const isDue = s.status === SNOOZE_STATUS.DUE || (s.status === SNOOZE_STATUS.AWAITING && new Date(s.dueAt).getTime() <= now);
+    const isReplied = s.status === SNOOZE_STATUS.REPLIED;
+    const cardClass = isReplied ? 'replied' : isDue ? 'due' : 'awaiting';
+
+    card.className = `snooze-card ${cardClass}`;
+
+    let badgeHtml = '';
+    if (isReplied) {
+      badgeHtml = `<span class="badge-snooze-replied">🎉 Replied</span>`;
+    } else if (isDue) {
+      badgeHtml = `<span class="badge-snooze-due">⏰ Overdue</span>`;
+    } else {
+      const diffMs = new Date(s.dueAt).getTime() - now;
+      const hoursLeft = Math.max(1, Math.round(diffMs / 3600000));
+      badgeHtml = `<span class="badge-snooze-awaiting">⏳ ${hoursLeft}h left</span>`;
+    }
+
+    const snoozedDateStr = new Date(s.snoozedAt || s.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const dueDateStr = new Date(s.dueAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    card.innerHTML = `
+      <div class="snooze-card-top">
+        <div>
+          <h4 class="snooze-card-name">${escapeHtml(s.contactName || 'Contact')}</h4>
+          <div class="snooze-card-phone">${s.phone ? `+${escapeHtml(s.phone)}` : 'WhatsApp Contact'}</div>
+        </div>
+        ${badgeHtml}
+      </div>
+
+      <div class="snooze-card-meta">
+        <div><span class="meta-label">Snoozed:</span> ${snoozedDateStr}</div>
+        <div><span class="meta-label">${isReplied ? 'Replied at:' : 'Deadline:'}</span> ${isReplied && s.repliedAt ? new Date(s.repliedAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : dueDateStr}</div>
+        ${s.lastMessageSnippet ? `<div style="margin-top: 4px; font-style: italic; color: #475569;">"${escapeHtml(s.lastMessageSnippet.slice(0, 100))}"</div>` : ''}
+      </div>
+
+      <div class="snooze-card-actions">
+        ${s.phone ? `<button type="button" class="btn btn-primary btn-sm btn-snooze-chat">💬 WhatsApp</button>` : '<div></div>'}
+        <div style="display: flex; gap: 6px;">
+          ${!isReplied ? `<button type="button" class="btn btn-outline btn-sm btn-snooze-mark-reply">✓ Mark Replied</button>` : ''}
+          <button type="button" class="btn btn-neutral btn-sm btn-snooze-delete" title="Delete snooze">🗑️</button>
+        </div>
+      </div>
+    `;
+
+    // WhatsApp button
+    card.querySelector('.btn-snooze-chat')?.addEventListener('click', () => {
+      const cleanPhone = String(s.phone).replace(/\D/g, '');
+      const url = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
+      window.open(url, '_blank');
+    });
+
+    // Mark Replied
+    card.querySelector('.btn-snooze-mark-reply')?.addEventListener('click', async () => {
+      await StorageService.updateSnooze(s.id, {
+        status: SNOOZE_STATUS.REPLIED,
+        repliedAt: new Date().toISOString()
+      });
+      await refreshSnoozeView();
+    });
+
+    // Delete
+    card.querySelector('.btn-snooze-delete')?.addEventListener('click', async () => {
+      if (confirm(`Remove tracking for ${s.contactName || 'this contact'}?`)) {
+        await StorageService.deleteSnooze(s.id);
+        await refreshSnoozeView();
+      }
+    });
+
+    container.appendChild(card);
+  });
 }
 
 // ==========================================

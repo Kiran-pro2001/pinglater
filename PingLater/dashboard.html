@@ -49,6 +49,14 @@
           <span id="navDueBadge" class="nav-badge hidden">0</span>
         </button>
 
+        <button class="nav-item" data-tab="tab-snooze">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          Awaiting Reply
+          <span id="navSnoozeBadge" class="nav-badge hidden" style="background:#22C55E;">0</span>
+        </button>
+
         <button class="nav-item" data-tab="tab-templates">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -591,6 +599,61 @@
       </section>
 
       <!-- ========================================================
+           TAB: "AWAITING REPLY" SMART SNOOZE PIPELINE (FEATURE 2)
+           ======================================================== -->
+      <section id="tab-snooze" class="tab-pane">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>💤 "Awaiting Reply" Tracker</h2>
+              <p>Smart follow-ups that automatically cancel the moment your prospect replies on WhatsApp.</p>
+            </div>
+            <div class="page-top-actions">
+              <button id="btnOpenNewSnoozeModal" class="btn btn-primary btn-sm">+ Track New Contact</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI Metrics Grid -->
+        <div class="snooze-stats-grid">
+          <div class="stat-card">
+            <span class="stat-icon">⏳</span>
+            <div>
+              <div class="stat-num" id="statAwaitingCount">0</div>
+              <div class="stat-lbl">Awaiting Reply</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">⏰</span>
+            <div>
+              <div class="stat-num" id="statDueCount" style="color:#EF4444;">0</div>
+              <div class="stat-lbl">Due for Follow-up</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">🎉</span>
+            <div>
+              <div class="stat-num" id="statRepliedCount" style="color:#10B981;">0</div>
+              <div class="stat-lbl">Replied & Resolved</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter Pills -->
+        <div class="filter-pills" id="snoozeFilterPills" style="margin-top: 16px;">
+          <button class="pill active" data-filter="all">All Contacts</button>
+          <button class="pill" data-filter="awaiting">⏳ Awaiting Reply</button>
+          <button class="pill" data-filter="due">⏰ Due for Follow-up</button>
+          <button class="pill" data-filter="replied">🎉 Replied</button>
+        </div>
+
+        <div id="snoozeCardsContainer" class="snooze-cards-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- ========================================================
            TAB: MESSAGE TEMPLATES MANAGER
            ======================================================== -->
       <section id="tab-templates" class="tab-pane">
@@ -828,6 +891,46 @@
       <div class="modal-footer" style="display: flex; justify-content: space-between;">
         <button id="btnCloseSkippedModalBtn" class="btn btn-outline">Close</button>
         <button id="btnExportSkippedCSV" class="btn btn-primary">📥 Export Skipped CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Track New Contact Snooze (Feature 2) -->
+  <div id="newSnoozeModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>💤 Track "Awaiting Reply" Follow-up</h3>
+        <button id="btnCloseNewSnoozeModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: #64748B; margin-bottom: 14px;">
+          PingLater will monitor this contact and automatically dismiss this reminder if they reply before the deadline.
+        </p>
+        <div class="form-group">
+          <label for="snoozeContactName">Contact Name</label>
+          <input type="text" id="snoozeContactName" class="form-input" placeholder="e.g. Alex Miller">
+        </div>
+        <div class="form-group">
+          <label for="snoozePhone">WhatsApp Phone (with Country Code)</label>
+          <input type="text" id="snoozePhone" class="form-input" placeholder="e.g. 918590658979">
+        </div>
+        <div class="form-group">
+          <label for="snoozeHours">Remind me if no reply after:</label>
+          <select id="snoozeHours" class="form-select">
+            <option value="24">⚡ 24 hours (Tomorrow)</option>
+            <option value="48" selected>🎯 48 hours (2 days) - Recommended</option>
+            <option value="72">📅 3 days</option>
+            <option value="168">🗓️ 1 week</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="snoozeNote">Note / Context (Optional)</label>
+          <input type="text" id="snoozeNote" class="form-input" placeholder="e.g. Sent proposal for website redesign">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelNewSnoozeModal" class="btn btn-outline">Cancel</button>
+        <button id="btnSaveNewSnoozeModal" class="btn btn-primary">Start Tracking</button>
       </div>
     </div>
   </div>

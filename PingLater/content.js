@@ -324,7 +324,334 @@
     if (popupElement && !popupElement.contains(e.target)) {
       hidePopup();
     }
+    const dropdown = document.getElementById('pinglater-dropdown-snooze');
+    const trigger = document.getElementById('pinglater-btn-trigger-snooze');
+    if (dropdown && trigger && !trigger.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
   });
 
-  console.log('[PingLater] In-Chat Quick Snippets loaded on WhatsApp Web.');
+  // ==========================================
+  // "AWAITING REPLY" SMART SNOOZE (FEATURE 2)
+  // ==========================================
+  let snoozes = [];
+  let snoozeContainer = null;
+  let activeChatObserver = null;
+
+  function loadSnoozes() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
+        snoozes = res.pinglater_snoozed_chats || [];
+        updateSnoozePill();
+      });
+    }
+  }
+
+  // Real-time storage listener for snoozes
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.pinglater_snoozed_chats) {
+        snoozes = changes.pinglater_snoozed_chats.newValue || [];
+        updateSnoozePill();
+      }
+    });
+  }
+
+  loadSnoozes();
+
+  function getCurrentChatInfo() {
+    try {
+      const header = document.querySelector('#main header') || document.querySelector('header');
+      if (!header) return null;
+
+      const titleEl =
+        header.querySelector('span[data-testid="conversation-info-header-chat-title"]') ||
+        header.querySelector('div[role="button"] span[title]') ||
+        header.querySelector('span[dir="auto"]');
+
+      if (!titleEl) return null;
+
+      const rawTitle = (titleEl.getAttribute('title') || titleEl.innerText || '').trim();
+      const phoneDigits = rawTitle.replace(/\D/g, '');
+      const isPhoneTitle = phoneDigits.length >= 7 && /^[\d\s+\-()]+$/.test(rawTitle);
+
+      return {
+        title: rawTitle,
+        contactName: isPhoneTitle ? '' : rawTitle.split(/\s+/)[0],
+        phone: isPhoneTitle ? phoneDigits : '',
+        cleanIdentifier: isPhoneTitle ? phoneDigits : rawTitle.toLowerCase()
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getActiveSnoozeForCurrentChat() {
+    const info = getCurrentChatInfo();
+    if (!info) return null;
+
+    return (
+      snoozes.find((s) => {
+        if (s.status !== 'awaiting') return false;
+        if (info.phone && s.phone && String(s.phone).replace(/\D/g, '') === info.phone) return true;
+        if (info.title && s.contactName && s.contactName.trim().toLowerCase() === info.title.trim().toLowerCase()) return true;
+        return false;
+      }) || null
+    );
+  }
+
+  function formatRemainingTime(dueAtIso) {
+    const diffMs = new Date(dueAtIso).getTime() - Date.now();
+    if (diffMs <= 0) return 'Overdue';
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h left`;
+    }
+    if (hours > 0) {
+      return `${hours}h ${mins}m left`;
+    }
+    return `${mins}m left`;
+  }
+
+  function getOrCreateSnoozeContainer() {
+    if (snoozeContainer && document.body.contains(snoozeContainer)) {
+      return snoozeContainer;
+    }
+    const container = document.createElement('div');
+    container.id = 'pinglater-snooze-container';
+    document.body.appendChild(container);
+    snoozeContainer = container;
+    return container;
+  }
+
+  function updateSnoozePill() {
+    const mainChat = document.querySelector('#main');
+    if (!mainChat) {
+      if (snoozeContainer) snoozeContainer.style.display = 'none';
+      return;
+    }
+
+    const info = getCurrentChatInfo();
+    if (!info) {
+      if (snoozeContainer) snoozeContainer.style.display = 'none';
+      return;
+    }
+
+    const container = getOrCreateSnoozeContainer();
+    container.style.display = 'block';
+
+    const activeSnooze = getActiveSnoozeForCurrentChat();
+
+    if (activeSnooze) {
+      const remaining = formatRemainingTime(activeSnooze.dueAt);
+      container.innerHTML = `
+        <div class="pinglater-snooze-pill awaiting">
+          <span>⏳</span>
+          <span>Awaiting reply</span>
+          <span class="pinglater-snooze-badge">${escapeHtml(remaining)}</span>
+          <button type="button" class="pinglater-pill-btn-action btn-replied" title="Mark as replied">✓ Replied</button>
+          <button type="button" class="pinglater-pill-btn-action btn-cancel" title="Cancel snooze">✕</button>
+        </div>
+      `;
+
+      container.querySelector('.btn-replied')?.addEventListener('click', () => {
+        resolveSnoozeManual(activeSnooze.id);
+      });
+
+      container.querySelector('.btn-cancel')?.addEventListener('click', () => {
+        cancelSnooze(activeSnooze.id);
+      });
+    } else {
+      container.innerHTML = `
+        <div class="pinglater-snooze-pill">
+          <button type="button" class="pinglater-snooze-btn-trigger" id="pinglater-btn-trigger-snooze">
+            <span>💤</span>
+            <span>Snooze if no reply</span>
+            <span style="font-size: 9px; opacity: 0.6;">▾</span>
+          </button>
+          <div class="pinglater-snooze-dropdown" id="pinglater-dropdown-snooze" style="display:none;">
+            <div class="pinglater-snooze-dropdown-header">Remind me if no reply:</div>
+            <div class="pinglater-snooze-dropdown-item" data-hours="24">
+              <span>⚡ In 24 hours</span>
+              <span style="font-size:11px; opacity:0.6;">Tomorrow</span>
+            </div>
+            <div class="pinglater-snooze-dropdown-item" data-hours="48">
+              <span>🎯 In 48 hours</span>
+              <span class="recommended">Recommended</span>
+            </div>
+            <div class="pinglater-snooze-dropdown-item" data-hours="72">
+              <span>📅 In 3 days</span>
+              <span style="font-size:11px; opacity:0.6;">72h</span>
+            </div>
+            <div class="pinglater-snooze-dropdown-item" data-hours="168">
+              <span>🗓️ In 1 week</span>
+              <span style="font-size:11px; opacity:0.6;">7 days</span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const trigger = container.querySelector('#pinglater-btn-trigger-snooze');
+      const dropdown = container.querySelector('#pinglater-dropdown-snooze');
+
+      trigger?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+      });
+
+      container.querySelectorAll('.pinglater-snooze-dropdown-item').forEach((item) => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const hours = parseInt(item.dataset.hours, 10) || 48;
+          dropdown.style.display = 'none';
+          createSnooze(hours);
+        });
+      });
+    }
+  }
+
+  function createSnooze(hours) {
+    const info = getCurrentChatInfo();
+    if (!info) return;
+
+    const now = new Date();
+    const dueAt = new Date(now.getTime() + hours * 3600000).toISOString();
+    const contactDisplayName = info.title || (info.phone ? `+${info.phone}` : 'Contact');
+
+    const newSnooze = {
+      id: `snooze_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      contactName: contactDisplayName,
+      phone: info.phone || '',
+      cleanIdentifier: info.cleanIdentifier,
+      snoozedAt: now.toISOString(),
+      dueAt: dueAt,
+      durationHours: hours,
+      status: 'awaiting',
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    };
+
+    chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
+      const list = res.pinglater_snoozed_chats || [];
+      list.unshift(newSnooze);
+      chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
+        // Notify background to schedule alarm
+        chrome.runtime.sendMessage({
+          type: 'SCHEDULE_SNOOZE_ALARM',
+          snoozeId: newSnooze.id,
+          dueAt: newSnooze.dueAt,
+          contactName: newSnooze.contactName,
+          phone: newSnooze.phone
+        });
+
+        showPingLaterToast('💤', `Snoozed for ${hours}h! If ${contactDisplayName} replies, PingLater will auto-dismiss.`);
+        updateSnoozePill();
+      });
+    });
+  }
+
+  function resolveSnoozeManual(id) {
+    chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
+      const list = res.pinglater_snoozed_chats || [];
+      const item = list.find((s) => s.id === id);
+      if (item) {
+        item.status = 'replied';
+        item.repliedAt = new Date().toISOString();
+        chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
+          chrome.runtime.sendMessage({ type: 'CANCEL_SNOOZE_ALARM', snoozeId: id });
+          showPingLaterToast('🎉', `Marked as replied! Follow-up reminder cleared.`);
+          updateSnoozePill();
+        });
+      }
+    });
+  }
+
+  function cancelSnooze(id) {
+    chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
+      const list = (res.pinglater_snoozed_chats || []).filter((s) => s.id !== id);
+      chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
+        chrome.runtime.sendMessage({ type: 'CANCEL_SNOOZE_ALARM', snoozeId: id });
+        showPingLaterToast('✕', `Snooze reminder cancelled.`);
+        updateSnoozePill();
+      });
+    });
+  }
+
+  // Watches active chat for incoming message bubbles (.message-in)
+  function initReplyObserver() {
+    const mainChat = document.querySelector('#main');
+    if (!mainChat) return;
+
+    if (activeChatObserver) {
+      activeChatObserver.disconnect();
+    }
+
+    activeChatObserver = new MutationObserver((mutations) => {
+      let hasNewIncoming = false;
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (
+              node.classList?.contains('message-in') ||
+              node.querySelector?.('.message-in') ||
+              node.getAttribute?.('data-id')?.includes('false_')
+            ) {
+              hasNewIncoming = true;
+              break;
+            }
+          }
+        }
+        if (hasNewIncoming) break;
+      }
+
+      if (hasNewIncoming) {
+        const activeSnooze = getActiveSnoozeForCurrentChat();
+        if (activeSnooze) {
+          console.log('[PingLater] Incoming message detected for snoozed contact:', activeSnooze.contactName);
+          resolveSnoozeManual(activeSnooze.id);
+          showPingLaterToast('🎉', `${activeSnooze.contactName} just replied! "Awaiting Reply" reminder automatically cleared.`);
+        }
+      }
+    });
+
+    activeChatObserver.observe(mainChat, { childList: true, subtree: true });
+  }
+
+  function showPingLaterToast(icon, message, durationMs = 4000) {
+    const existing = document.getElementById('pinglater-toast-banner');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'pinglater-toast-banner';
+    toast.innerHTML = `
+      <span class="pinglater-toast-icon">${icon}</span>
+      <span class="pinglater-toast-msg">${escapeHtml(message)}</span>
+      <button type="button" class="pinglater-toast-close" title="Close">✕</button>
+    `;
+
+    toast.querySelector('.pinglater-toast-close')?.addEventListener('click', () => toast.remove());
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      if (document.body.contains(toast)) {
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translate(-50%, -10px)';
+        setTimeout(() => toast.remove(), 300);
+      }
+    }, durationMs);
+  }
+
+  // Periodic polling for chat switches and observer attachment
+  setInterval(() => {
+    updateSnoozePill();
+    if (!activeChatObserver && document.querySelector('#main')) {
+      initReplyObserver();
+    }
+  }, 2000);
+
+  console.log('[PingLater] In-Chat Quick Snippets & Smart Snooze loaded on WhatsApp Web.');
 })();

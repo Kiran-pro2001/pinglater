@@ -10,7 +10,16 @@ export const STORAGE_KEYS = {
   TEMPLATES: 'pinglater_templates',
   CONTACTS: 'pinglater_contacts',
   SETTINGS: 'pinglater_settings',
-  LOGS: 'pinglater_logs'
+  LOGS: 'pinglater_logs',
+  SNOOZED_CHATS: 'pinglater_snoozed_chats'
+};
+
+// Snooze Status for "Awaiting Reply" Tracker (Feature 2)
+export const SNOOZE_STATUS = {
+  AWAITING: 'awaiting',
+  REPLIED: 'replied',
+  DUE: 'due',
+  DISMISSED: 'dismissed'
 };
 
 // Batch & Recipient Status Constants
@@ -269,6 +278,11 @@ export class StorageService {
     if (!existingContacts) {
       await StorageAdapter.set(STORAGE_KEYS.CONTACTS, []);
     }
+
+    const existingSnoozes = await this.getSnoozes();
+    if (!existingSnoozes) {
+      await StorageAdapter.set(STORAGE_KEYS.SNOOZED_CHATS, []);
+    }
   }
 
   // ==========================================
@@ -483,6 +497,159 @@ export class StorageService {
   }
 
   // ==========================================
+  // "AWAITING REPLY" SMART SNOOZE (FEATURE 2)
+  // ==========================================
+  static async getSnoozes() {
+    const list = await StorageAdapter.get(STORAGE_KEYS.SNOOZED_CHATS);
+    return Array.isArray(list) ? list : [];
+  }
+
+  static async getSnoozeById(id) {
+    const list = await this.getSnoozes();
+    return list.find((s) => s.id === id) || null;
+  }
+
+  static async saveSnooze(snooze) {
+    const list = await this.getSnoozes();
+    const now = new Date().toISOString();
+    let saved;
+
+    if (snooze.id) {
+      const idx = list.findIndex((s) => s.id === snooze.id);
+      if (idx >= 0) {
+        saved = { ...list[idx], ...snooze, updatedAt: now };
+        list[idx] = saved;
+      } else {
+        saved = { ...snooze, createdAt: snooze.createdAt || now, updatedAt: now };
+        list.push(saved);
+      }
+    } else {
+      saved = {
+        ...snooze,
+        id: `snooze_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        status: snooze.status || SNOOZE_STATUS.AWAITING,
+        createdAt: now,
+        updatedAt: now
+      };
+      list.unshift(saved);
+    }
+
+    await StorageAdapter.set(STORAGE_KEYS.SNOOZED_CHATS, list);
+
+    // Notify background to schedule/update alarm if awaiting
+    if (saved.status === SNOOZE_STATUS.AWAITING && saved.dueAt) {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: 'SCHEDULE_SNOOZE_ALARM',
+          snoozeId: saved.id,
+          dueAt: saved.dueAt,
+          contactName: saved.contactName,
+          phone: saved.phone
+        }).catch(() => {});
+      }
+    }
+
+    return saved;
+  }
+
+  static async updateSnooze(id, updates) {
+    const list = await this.getSnoozes();
+    const idx = list.findIndex((s) => s.id === id);
+    if (idx === -1) return null;
+
+    const now = new Date().toISOString();
+    list[idx] = { ...list[idx], ...updates, updatedAt: now };
+    await StorageAdapter.set(STORAGE_KEYS.SNOOZED_CHATS, list);
+
+    // If status became resolved, replied, or dismissed, cancel alarm
+    if ([SNOOZE_STATUS.REPLIED, SNOOZE_STATUS.DISMISSED].includes(list[idx].status)) {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: 'CANCEL_SNOOZE_ALARM',
+          snoozeId: id
+        }).catch(() => {});
+      }
+    }
+
+    return list[idx];
+  }
+
+  static async deleteSnooze(id) {
+    const list = await this.getSnoozes();
+    const filtered = list.filter((s) => s.id !== id);
+    await StorageAdapter.set(STORAGE_KEYS.SNOOZED_CHATS, filtered);
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({
+        type: 'CANCEL_SNOOZE_ALARM',
+        snoozeId: id
+      }).catch(() => {});
+    }
+    return true;
+  }
+
+  /**
+   * Finds any active "awaiting" snooze for a given contact
+   * Matches by cleaned phone or case-insensitive contact name.
+   */
+  static async findActiveSnooze(identifier) {
+    if (!identifier) return null;
+    const cleanTarget = String(identifier).replace(/\D/g, '');
+    const textTarget = String(identifier).trim().toLowerCase();
+    const list = await this.getSnoozes();
+
+    return list.find((s) => {
+      if (s.status !== SNOOZE_STATUS.AWAITING) return false;
+      if (cleanTarget && s.phone && String(s.phone).replace(/\D/g, '') === cleanTarget) {
+        return true;
+      }
+      if (textTarget && s.contactName && s.contactName.trim().toLowerCase() === textTarget) {
+        return true;
+      }
+      return false;
+    }) || null;
+  }
+
+  /**
+   * Auto-resolves a snooze when incoming reply is detected
+   */
+  static async markSnoozeReplied(identifier, replySnippet = '') {
+    const active = await this.findActiveSnooze(identifier);
+    if (!active) return null;
+
+    const updated = await this.updateSnooze(active.id, {
+      status: SNOOZE_STATUS.REPLIED,
+      repliedAt: new Date().toISOString(),
+      replySnippet: replySnippet || 'Incoming reply received'
+    });
+
+    return updated;
+  }
+
+  static async getAwaitingStats() {
+    const list = await this.getSnoozes();
+    const now = Date.now();
+    let awaiting = 0;
+    let due = 0;
+    let replied = 0;
+
+    list.forEach((s) => {
+      if (s.status === SNOOZE_STATUS.REPLIED) {
+        replied++;
+      } else if (s.status === SNOOZE_STATUS.AWAITING) {
+        if (new Date(s.dueAt).getTime() <= now) {
+          due++;
+        } else {
+          awaiting++;
+        }
+      } else if (s.status === SNOOZE_STATUS.DUE) {
+        due++;
+      }
+    });
+
+    return { awaiting, due, replied, total: list.length };
+  }
+
+  // ==========================================
   // BACKUP & RESTORE
   // ==========================================
   static async exportAllData() {
@@ -490,6 +657,7 @@ export class StorageService {
     const templates = await this.getTemplates();
     const batches = await this.getBatches();
     const contacts = await this.getContacts();
+    const snoozes = await this.getSnoozes();
 
     return {
       version: '1.0.0',
@@ -497,7 +665,8 @@ export class StorageService {
       settings,
       templates,
       batches,
-      contacts
+      contacts,
+      snoozes
     };
   }
 
@@ -507,6 +676,7 @@ export class StorageService {
     if (payload.templates) await StorageAdapter.set(STORAGE_KEYS.TEMPLATES, payload.templates);
     if (payload.batches) await StorageAdapter.set(STORAGE_KEYS.BATCHES, payload.batches);
     if (payload.contacts) await StorageAdapter.set(STORAGE_KEYS.CONTACTS, payload.contacts);
+    if (payload.snoozes) await StorageAdapter.set(STORAGE_KEYS.SNOOZED_CHATS, payload.snoozes);
     return true;
   }
 
@@ -523,4 +693,5 @@ if (typeof globalThis !== 'undefined') {
   globalThis.BATCH_STATUS = BATCH_STATUS;
   globalThis.RECIPIENT_STATUS = RECIPIENT_STATUS;
   globalThis.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
+  globalThis.SNOOZE_STATUS = SNOOZE_STATUS;
 }

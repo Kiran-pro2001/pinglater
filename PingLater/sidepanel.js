@@ -4,7 +4,7 @@
  * WhatsApp tab navigation, keyboard shortcuts, and report export.
  */
 
-import { StorageService, BATCH_STATUS, RECIPIENT_STATUS } from './utils/storage.js';
+import { StorageService, BATCH_STATUS, RECIPIENT_STATUS, SNOOZE_STATUS } from './utils/storage.js';
 import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
 import { calculateNextRecurringDate, formatRecurrenceSummary } from './utils/recurring.js';
@@ -445,10 +445,30 @@ async function handleMarkSent() {
   if (isPacing || !currentBatch) return;
 
   const idx = currentBatch.currentIndex || 0;
+  const currentRecipient = currentBatch.recipients ? currentBatch.recipients[idx] : null;
+
   await StorageService.updateBatchRecipient(currentBatch.id, idx, {
     status: RECIPIENT_STATUS.SENT,
     sentAt: new Date().toISOString()
   });
+
+  // Auto-snooze if enabled (Feature 2: Awaiting Reply Smart Snooze)
+  const chkSnooze = document.getElementById('chkAutoSnoozeAfterSend');
+  if (chkSnooze && chkSnooze.checked && currentRecipient) {
+    const hours = parseInt(document.getElementById('selectSidepanelSnoozeHours')?.value, 10) || 48;
+    const now = new Date();
+    const dueAt = new Date(now.getTime() + hours * 3600000).toISOString();
+    await StorageService.saveSnooze({
+      contactName: currentRecipient.name || (currentRecipient.phone ? `+${currentRecipient.phone}` : 'Contact'),
+      phone: currentRecipient.phone || '',
+      cleanIdentifier: currentRecipient.phone || (currentRecipient.name || '').toLowerCase(),
+      snoozedAt: now.toISOString(),
+      dueAt: dueAt,
+      durationHours: hours,
+      lastMessageSnippet: currentRecipient.renderedMessage || '',
+      status: SNOOZE_STATUS.AWAITING
+    }).catch((err) => console.warn('[PingLater] Could not auto-snooze:', err));
+  }
 
   // Reload batch state
   currentBatch = await StorageService.getBatchById(currentBatch.id);

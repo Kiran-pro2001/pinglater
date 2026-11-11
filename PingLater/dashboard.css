@@ -1963,3 +1963,169 @@ body {
   font-weight: 600;
 }
 
+/* ==========================================
+   "AWAITING REPLY" TRACKER STYLES (FEATURE 2)
+   ========================================== */
+
+.snooze-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.snooze-stats-grid .stat-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.snooze-stats-grid .stat-icon {
+  font-size: 28px;
+}
+
+.snooze-stats-grid .stat-num {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0F172A;
+  line-height: 1.1;
+}
+
+.snooze-stats-grid .stat-lbl {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748B;
+  margin-top: 2px;
+}
+
+.snooze-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.snooze-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.snooze-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
+}
+
+.snooze-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #E2E8F0;
+}
+
+.snooze-card.awaiting::before {
+  background: linear-gradient(90deg, #10B981, #22C55E);
+}
+
+.snooze-card.due::before {
+  background: linear-gradient(90deg, #EF4444, #F97316);
+}
+
+.snooze-card.replied::before {
+  background: linear-gradient(90deg, #059669, #34D399);
+}
+
+.snooze-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.snooze-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+  margin: 0;
+}
+
+.snooze-card-phone {
+  font-size: 12.5px;
+  color: #64748B;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.badge-snooze-awaiting {
+  font-size: 11.5px;
+  font-weight: 800;
+  background: #F0FDF4;
+  color: #15803D;
+  border: 1px solid #86EFAC;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.badge-snooze-due {
+  font-size: 11.5px;
+  font-weight: 800;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.badge-snooze-replied {
+  font-size: 11.5px;
+  font-weight: 800;
+  background: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.snooze-card-meta {
+  font-size: 12px;
+  color: #64748B;
+  background: #F8FAFC;
+  padding: 8px 12px;
+  border-radius: 8px;
+  line-height: 1.4;
+}
+
+.snooze-card-meta .meta-label {
+  font-weight: 700;
+  color: #334155;
+}
+
+.snooze-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid #F1F5F9;
+}
+

@@ -4,7 +4,7 @@
  * toolbar badge management, and side panel opening.
  */
 
-import { StorageService, BATCH_STATUS } from './utils/storage.js';
+import { StorageService, BATCH_STATUS, SNOOZE_STATUS } from './utils/storage.js';
 
 const WATCHDOG_ALARM_NAME = 'pinglater_watchdog';
 
@@ -62,8 +62,44 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name.startsWith('batch_')) {
     const batchId = alarm.name;
     await triggerBatchDue(batchId);
+    return;
+  }
+
+  if (alarm.name.startsWith('snooze_')) {
+    const snoozeId = alarm.name;
+    await triggerSnoozeDue(snoozeId);
+    return;
   }
 });
+
+/**
+ * Handles a snoozed chat that expired without receiving a reply (Feature 2).
+ */
+async function triggerSnoozeDue(snoozeId) {
+  const snooze = await StorageService.getSnoozeById(snoozeId);
+  if (!snooze || snooze.status !== SNOOZE_STATUS.AWAITING) {
+    return;
+  }
+
+  // Update status to DUE
+  await StorageService.updateSnooze(snoozeId, {
+    status: SNOOZE_STATUS.DUE
+  });
+
+  const contact = snooze.contactName || (snooze.phone ? `+${snooze.phone}` : 'Contact');
+  const hours = snooze.durationHours || 48;
+
+  chrome.notifications.create(`notif_snooze_${snoozeId}`, {
+    type: 'basic',
+    iconUrl: 'assets/icons/icon128.png',
+    title: `⏰ No Reply: ${contact}`,
+    message: `${contact} hasn't replied to your message after ${hours}h. Click to open chat and follow up.`,
+    priority: 2,
+    requireInteraction: true
+  });
+
+  await checkOverdueAndRefreshBadge();
+}
 
 /**
  * Handles a batch whose scheduled time has arrived.
@@ -112,6 +148,25 @@ async function triggerBatchDue(batchId) {
 chrome.notifications.onClicked.addListener(async (notificationId) => {
   console.log('[PingLater] Notification clicked:', notificationId);
   chrome.notifications.clear(notificationId);
+
+  // Handle Snooze due notifications (Feature 2)
+  if (notificationId.startsWith('notif_snooze_')) {
+    const targetSnoozeId = notificationId.replace('notif_snooze_', '');
+    const snooze = await StorageService.getSnoozeById(targetSnoozeId);
+    if (snooze && snooze.phone) {
+      const cleanPhone = String(snooze.phone).replace(/\D/g, '');
+      const url = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
+      const waTabs = await chrome.tabs.query({ url: '*://web.whatsapp.com/*' });
+      if (waTabs.length > 0) {
+        await chrome.tabs.update(waTabs[0].id, { url, active: true });
+      } else {
+        await chrome.tabs.create({ url, active: true });
+      }
+    } else {
+      await openSendingWorkspace();
+    }
+    return;
+  }
 
   // Extract batchId if present
   let targetBatchId = null;
@@ -162,10 +217,12 @@ async function openSendingWorkspace(batchId = null) {
 
 export async function checkOverdueAndRefreshBadge() {
   const batches = await StorageService.getBatches();
+  const snoozes = await StorageService.getSnoozes();
   const now = Date.now();
 
   let overdueCount = 0;
   let activePendingCount = 0;
+  let dueSnoozeCount = 0;
 
   for (const b of batches) {
     if (b.status === BATCH_STATUS.COMPLETED || b.status === BATCH_STATUS.CANCELLED) {
@@ -187,11 +244,26 @@ export async function checkOverdueAndRefreshBadge() {
     }
   }
 
+  // Check snoozed chats
+  for (const s of snoozes) {
+    if (s.status === SNOOZE_STATUS.AWAITING) {
+      const dueTime = new Date(s.dueAt).getTime();
+      if (dueTime <= now) {
+        await StorageService.updateSnooze(s.id, { status: SNOOZE_STATUS.DUE });
+        dueSnoozeCount++;
+      }
+    } else if (s.status === SNOOZE_STATUS.DUE) {
+      dueSnoozeCount++;
+    }
+  }
+
+  const totalActionNeeded = overdueCount + dueSnoozeCount;
+
   // Update Toolbar Badge
-  if (overdueCount > 0) {
-    chrome.action.setBadgeText({ text: String(overdueCount) });
-    chrome.action.setBadgeBackgroundColor({ color: '#E53E3E' }); // Red for overdue
-    chrome.action.setTitle({ title: `PingLater: ${overdueCount} overdue follow-up batch(es)!` });
+  if (totalActionNeeded > 0) {
+    chrome.action.setBadgeText({ text: String(totalActionNeeded) });
+    chrome.action.setBadgeBackgroundColor({ color: '#E53E3E' }); // Red for overdue / due
+    chrome.action.setTitle({ title: `PingLater: ${totalActionNeeded} overdue follow-up(s) & awaiting reply tasks!` });
   } else if (activePendingCount > 0) {
     chrome.action.setBadgeText({ text: String(activePendingCount) });
     chrome.action.setBadgeBackgroundColor({ color: '#25D366' }); // Green for active messages
@@ -201,7 +273,7 @@ export async function checkOverdueAndRefreshBadge() {
     chrome.action.setTitle({ title: 'PingLater: Never forget a follow-up' });
   }
 
-  return { overdueCount, activePendingCount };
+  return { overdueCount, activePendingCount, dueSnoozeCount };
 }
 
 // ==========================================
@@ -274,6 +346,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'OPEN_DASHBOARD': {
       chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
       sendResponse({ success: true });
+      break;
+    }
+
+    case 'SCHEDULE_SNOOZE_ALARM': {
+      const { snoozeId, dueAt } = message;
+      const targetTime = new Date(dueAt).getTime();
+      if (!isNaN(targetTime)) {
+        chrome.alarms.create(snoozeId, { when: targetTime });
+        console.log(`[PingLater] Scheduled snooze alarm for ${snoozeId} at ${new Date(targetTime).toLocaleTimeString()}`);
+      }
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'CANCEL_SNOOZE_ALARM': {
+      if (message.snoozeId) {
+        chrome.alarms.clear(message.snoozeId);
+      }
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'OPEN_WHATSAPP_CHAT': {
+      const { phone } = message;
+      if (phone) {
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        const url = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
+        chrome.tabs.query({ url: '*://web.whatsapp.com/*' }, (waTabs) => {
+          if (waTabs.length > 0) {
+            chrome.tabs.update(waTabs[0].id, { url, active: true });
+          } else {
+            chrome.tabs.create({ url, active: true });
+          }
+          sendResponse({ success: true });
+        });
+        return true;
+      }
       break;
     }
 
