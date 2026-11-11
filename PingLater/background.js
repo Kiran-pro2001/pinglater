@@ -84,11 +84,20 @@ async function triggerBatchDue(batchId) {
 
   // Show rich Chrome system notification
   const notificationId = `notif_${batchId}`;
+  const isRec = batch.isRecurring && batch.recurringConfig;
+  const titleText = isRec
+    ? `🔔 PingLater: ${batch.title} (Day ${batch.recurringConfig.currentCycle || 1} of ${batch.recurringConfig.totalCycles || '?'})`
+    : `🔔 PingLater: "${batch.title}" is ready!`;
+
+  const msgText = isRec
+    ? `Time for your scheduled WhatsApp check-in. Click to open workspace.`
+    : `${remaining} follow-up(s) ready to review & send. Click to open sending workspace.`;
+
   chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: 'assets/icons/icon128.png',
-    title: `🔔 PingLater: "${batch.title}" is ready!`,
-    message: `${remaining} follow-up(s) ready to review & send. Click to open sending workspace.`,
+    title: titleText,
+    message: msgText,
     priority: 2,
     requireInteraction: true
   });

@@ -113,10 +113,11 @@
         <!-- Filter Pills & Search -->
         <div class="filter-bar">
           <div class="filter-pills">
-            <button class="pill active" data-filter="all">All (<span id="countAll">0</span>)</button>
-            <button class="pill" data-filter="active">Active & Due (<span id="countActive">0</span>)</button>
-            <button class="pill" data-filter="scheduled">Scheduled (<span id="countScheduled">0</span>)</button>
-            <button class="pill" data-filter="completed">Completed (<span id="countCompleted">0</span>)</button>
+            <button type="button" class="pill active" data-filter="all">All (<span id="countAll">0</span>)</button>
+            <button type="button" class="pill" data-filter="active">Active & Due (<span id="countActive">0</span>)</button>
+            <button type="button" class="pill" data-filter="recurring">🔁 Recurring (<span id="countRecurring">0</span>)</button>
+            <button type="button" class="pill" data-filter="scheduled">Scheduled (<span id="countScheduled">0</span>)</button>
+            <button type="button" class="pill" data-filter="completed">Completed (<span id="countCompleted">0</span>)</button>
           </div>
           <div class="search-box">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -515,6 +516,65 @@
               <div class="timing-input-row">
                 <input type="datetime-local" id="singleScheduledTime" class="form-input flex-1">
                 <span id="singleScheduledDisplay" class="timing-badge">⏰ Starts in 5 mins</span>
+              </div>
+            </div>
+
+            <!-- Repeat Follow-up (Recurring Schedule Controls) -->
+            <div id="recurringControlCard" class="recurring-control-card mt-3">
+              <div class="recurring-toggle-header">
+                <label class="switch-container">
+                  <input type="checkbox" id="toggleRecurringFollowup">
+                  <span class="switch-slider"></span>
+                </label>
+                <div class="recurring-label-col">
+                  <span class="recurring-main-label">🔁 Repeat this follow-up (Recurring Schedule)</span>
+                  <span class="recurring-sub-label">Automatically re-schedule daily or weekly check-ins across a date range.</span>
+                </div>
+              </div>
+
+              <!-- Recurring Configuration (Shown when switch is checked) -->
+              <div id="recurringOptionsContainer" class="recurring-options-panel hidden">
+                <div class="form-group mt-1">
+                  <label class="sub-label">How often should PingLater remind you?</label>
+                  <div class="frequency-pills-row">
+                    <button type="button" class="btn-freq-pill active" data-freq="daily">📅 Every Day (Daily)</button>
+                    <button type="button" class="btn-freq-pill" data-freq="weekdays">💼 Weekdays Only (Mon-Fri)</button>
+                    <button type="button" class="btn-freq-pill" data-freq="weekly">🗓️ Every Week (Weekly)</button>
+                  </div>
+                </div>
+
+                <div class="form-grid-2 mt-2">
+                  <div class="form-group">
+                    <label for="recurringTimeOfDay">Daily Reminder Time <span class="required">*</span></label>
+                    <input type="time" id="recurringTimeOfDay" class="form-input" value="09:00">
+                  </div>
+                  <div class="form-group">
+                    <label>Duration Preset</label>
+                    <div class="range-presets-row">
+                      <button type="button" class="btn-range-preset active" data-range="7d">7 Days (1 Wk)</button>
+                      <button type="button" class="btn-range-preset" data-range="14d">14 Days (2 Wks)</button>
+                      <button type="button" class="btn-range-preset" data-range="30d">1 Month</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-grid-2 mt-2">
+                  <div class="form-group">
+                    <label for="recurringStartDate">Start Date <span class="required">*</span></label>
+                    <input type="date" id="recurringStartDate" class="form-input">
+                  </div>
+                  <div class="form-group">
+                    <label for="recurringEndDate">End Date (Stop repeating after) <span class="required">*</span></label>
+                    <input type="date" id="recurringEndDate" class="form-input">
+                  </div>
+                </div>
+
+                <div class="recurring-summary-banner">
+                  <div class="summary-icon">ℹ️</div>
+                  <div class="summary-text" id="recurringLiveSummary">
+                    Will remind you <strong>every day at 09:00 AM</strong> from today for 7 days (7 follow-ups total).
+                  </div>
+                </div>
               </div>
             </div>
 

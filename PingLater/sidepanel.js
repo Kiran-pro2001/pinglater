@@ -7,6 +7,7 @@
 import { StorageService, BATCH_STATUS, RECIPIENT_STATUS } from './utils/storage.js';
 import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
+import { calculateNextRecurringDate, formatRecurrenceSummary } from './utils/recurring.js';
 
 // Application State
 let currentBatch = null;
@@ -205,16 +206,32 @@ function renderWorkspace() {
 
   // Header stats
   batchTitle.textContent = currentBatch.title || 'Untitled Follow-up';
-  batchStatusBadge.textContent = currentBatch.status.replace('_', ' ');
 
-  statSent.innerHTML = `<strong>${sent}</strong> Sent`;
-  statSkipped.innerHTML = `<strong>${skipped}</strong> Skipped`;
-  statRemaining.innerHTML = `<strong>${remaining}</strong> Pending`;
-
-  const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
-  progressBarFill.style.width = `${percent}%`;
-  progressPercent.textContent = `${percent}%`;
-  progressFraction.textContent = `${processed} / ${total}`;
+  const isRec = currentBatch.isRecurring && currentBatch.recurringConfig;
+  if (isRec) {
+    batchStatusBadge.textContent = 'Recurring';
+    batchStatusBadge.className = 'status-badge badge-recurring';
+    const curCycle = currentBatch.recurringConfig.currentCycle || 1;
+    const totCycles = currentBatch.recurringConfig.totalCycles || 1;
+    const completedCycles = (currentBatch.recurringConfig.history || []).length;
+    statSent.innerHTML = `<strong>Day ${curCycle}</strong> of ${totCycles}`;
+    statSkipped.innerHTML = `<strong>${completedCycles}</strong> Done`;
+    statRemaining.innerHTML = `<strong>${Math.max(0, totCycles - completedCycles)}</strong> Left`;
+    const recPercent = Math.round((completedCycles / totCycles) * 100);
+    progressBarFill.style.width = `${recPercent}%`;
+    progressPercent.textContent = `${recPercent}%`;
+    progressFraction.textContent = `Day ${curCycle} of ${totCycles}`;
+  } else {
+    batchStatusBadge.textContent = currentBatch.status.replace('_', ' ');
+    batchStatusBadge.className = 'status-badge';
+    statSent.innerHTML = `<strong>${sent}</strong> Sent`;
+    statSkipped.innerHTML = `<strong>${skipped}</strong> Skipped`;
+    statRemaining.innerHTML = `<strong>${remaining}</strong> Pending`;
+    const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+    progressBarFill.style.width = `${percent}%`;
+    progressPercent.textContent = `${percent}%`;
+    progressFraction.textContent = `${processed} / ${total}`;
+  }
 
   // Current recipient details
   const idx = currentBatch.currentIndex || 0;
@@ -285,7 +302,11 @@ function renderWorkspace() {
   if (completionCard) completionCard.classList.add('hidden');
   if (recipientCard) recipientCard.classList.remove('hidden');
 
-  recipientIndexBadge.textContent = `Recipient #${idx + 1} of ${total}`;
+  if (currentBatch.isRecurring && currentBatch.recurringConfig) {
+    recipientIndexBadge.textContent = `🔁 Day ${currentBatch.recurringConfig.currentCycle || 1} of ${currentBatch.recurringConfig.totalCycles || 1}`;
+  } else {
+    recipientIndexBadge.textContent = `Recipient #${idx + 1} of ${total}`;
+  }
   recipientStatusPill.textContent = recipient.status.toUpperCase();
   recipientStatusPill.className = `recipient-status-pill status-${recipient.status}`;
 
@@ -425,11 +446,17 @@ async function handleMarkSent() {
 
   const idx = currentBatch.currentIndex || 0;
   await StorageService.updateBatchRecipient(currentBatch.id, idx, {
-    status: RECIPIENT_STATUS.SENT
+    status: RECIPIENT_STATUS.SENT,
+    sentAt: new Date().toISOString()
   });
 
   // Reload batch state
   currentBatch = await StorageService.getBatchById(currentBatch.id);
+
+  if (currentBatch.isRecurring) {
+    await handleRecurringStep('sent');
+    return;
+  }
 
   // Advance to next pending recipient
   await advanceNextRecipient();
@@ -437,9 +464,6 @@ async function handleMarkSent() {
 
 async function handleSkip() {
   if (isPacing || !currentBatch) return;
-
-  const isOneToOne = currentBatch.type === 'single' || 
-                     (currentBatch.recipients && currentBatch.recipients.length === 1);
 
   const idx = currentBatch.currentIndex || 0;
   await StorageService.updateBatchRecipient(currentBatch.id, idx, {
@@ -450,6 +474,14 @@ async function handleSkip() {
 
   currentBatch = await StorageService.getBatchById(currentBatch.id);
 
+  if (currentBatch.isRecurring) {
+    await handleRecurringStep('skipped');
+    return;
+  }
+
+  const isOneToOne = currentBatch.type === 'single' || 
+                     (currentBatch.recipients && currentBatch.recipients.length === 1);
+
   if (isOneToOne) {
     // 1-on-1 follow-up skipped: automatically wipe text from WhatsApp composer and close tab
     await WhatsAppOrchestrator.closeWhatsAppTabs().catch(() => {});
@@ -459,6 +491,121 @@ async function handleSkip() {
   }
 
   await advanceNextRecipient();
+}
+
+/**
+ * Handles stepping through a recurring daily/weekly schedule.
+ */
+async function handleRecurringStep(action = 'sent') {
+  clearPacing();
+  const cfg = currentBatch.recurringConfig || {};
+  const currentCycle = cfg.currentCycle || 1;
+  const totalCycles = cfg.totalCycles || 1;
+
+  // 1. Record today's history entry
+  const history = cfg.history || [];
+  history.push({
+    cycle: currentCycle,
+    date: new Date().toISOString().slice(0, 10),
+    action,
+    timestamp: new Date().toISOString()
+  });
+
+  // 2. Wipe text from WhatsApp composer and close WhatsApp Web tab!
+  await WhatsAppOrchestrator.closeWhatsAppTabs().catch(() => {});
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'CLOSE_WHATSAPP_TABS' }).catch(() => {});
+  }
+
+  // 3. Calculate next occurrence
+  const nextDate = calculateNextRecurringDate(cfg, new Date());
+
+  // 4. If next occurrence is valid and we haven't reached totalCycles:
+  if (nextDate && currentCycle < totalCycles) {
+    const nextCycle = currentCycle + 1;
+    const nextScheduledAt = nextDate.toISOString();
+
+    // Reset recipient status for next day
+    const updatedRecipients = (currentBatch.recipients || []).map((r) => ({
+      ...r,
+      status: RECIPIENT_STATUS.PENDING,
+      sentAt: null,
+      skippedAt: null
+    }));
+
+    await StorageService.updateBatch(currentBatch.id, {
+      status: BATCH_STATUS.SCHEDULED,
+      scheduledAt: nextScheduledAt,
+      currentIndex: 0,
+      recipients: updatedRecipients,
+      recurringConfig: {
+        ...cfg,
+        currentCycle: nextCycle,
+        history
+      }
+    });
+
+    currentBatch = await StorageService.getBatchById(currentBatch.id);
+
+    // Register next Chrome alarm via background
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({
+        type: 'SCHEDULE_BATCH',
+        batchId: currentBatch.id,
+        scheduledAt: nextScheduledAt
+      });
+      chrome.runtime.sendMessage({
+        type: 'REFRESH_BADGE'
+      });
+    }
+
+    showRecurringCycleScreen(currentCycle, totalCycles, nextDate, action);
+  } else {
+    // Finished all occurrences or reached end date
+    await StorageService.updateBatch(currentBatch.id, {
+      status: BATCH_STATUS.COMPLETED,
+      completedAt: new Date().toISOString(),
+      recurringConfig: {
+        ...cfg,
+        history
+      }
+    });
+
+    currentBatch = await StorageService.getBatchById(currentBatch.id);
+
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({
+        type: 'BATCH_COMPLETED',
+        batchId: currentBatch.id
+      });
+    }
+
+    showCompletionScreen();
+  }
+}
+
+function showRecurringCycleScreen(cycle, total, nextDate, action) {
+  recipientCard.classList.add('hidden');
+  const scheduledWaitingCard = document.getElementById('scheduledWaitingCard');
+  const pausedCard = document.getElementById('pausedCard');
+  if (scheduledWaitingCard) scheduledWaitingCard.classList.add('hidden');
+  if (pausedCard) pausedCard.classList.add('hidden');
+  completionCard.classList.remove('hidden');
+
+  metricSentCount.textContent = cycle;
+  metricSkippedCount.textContent = Math.max(0, total - cycle);
+  metricTotalCount.textContent = total;
+
+  const completionHeading = completionCard.querySelector('h2');
+  const completionIcon = completionCard.querySelector('.confetti-icon');
+
+  if (completionIcon) completionIcon.textContent = action === 'sent' ? '🔁' : '⏭️';
+  if (completionHeading) completionHeading.textContent = `Day ${cycle} of ${total} ${action === 'sent' ? 'Sent' : 'Skipped'}`;
+
+  const nextStr = nextDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  completionSummaryText.textContent = `Progress saved! Next recurring follow-up is scheduled for ${nextStr}. WhatsApp Web tab closed.`;
+
+  SoundPlayer.playChime(currentSettings ? currentSettings.soundVolume : 0.8);
 }
 
 function handlePrevious() {

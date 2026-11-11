@@ -1778,3 +1778,154 @@ body {
     transform: translateY(0) scale(1);
   }
 }
+
+/* ==========================================
+   RECURRING SCHEDULE CONTROLS (FEATURE 1)
+   ========================================== */
+.recurring-control-card {
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  transition: all 0.2s ease;
+}
+
+.recurring-control-card.active {
+  background: #FFFFFF;
+  border-color: #22C55E;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.08);
+}
+
+.recurring-toggle-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.switch-container {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.switch-container input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #CBD5E1;
+  transition: .3s;
+  border-radius: 24px;
+}
+
+.switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.switch-container input:checked + .switch-slider {
+  background-color: #22C55E;
+}
+
+.switch-container input:checked + .switch-slider:before {
+  transform: translateX(20px);
+}
+
+.recurring-label-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recurring-main-label {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.recurring-sub-label {
+  font-size: 12.5px;
+  color: #64748B;
+}
+
+.recurring-options-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #CBD5E1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideDownFade 0.2s ease-out;
+}
+
+.frequency-pills-row,
+.range-presets-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-freq-pill,
+.btn-range-preset {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-freq-pill:hover,
+.btn-range-preset:hover {
+  border-color: #22C55E;
+  color: #15803D;
+  background: #F0FDF4;
+}
+
+.btn-freq-pill.active,
+.btn-range-preset.active {
+  background: #DCFCE7;
+  border-color: #22C55E;
+  color: #15803D;
+  font-weight: 700;
+}
+
+.recurring-summary-banner {
+  background: #F0FDF4;
+  border: 1px solid #86EFAC;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #166534;
+}
+
+.badge-recurring {
+  background: #EEF2FF;
+  color: #4338CA;
+  border: 1px solid #C7D2FE;
+}
+

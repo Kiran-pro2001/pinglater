@@ -9,6 +9,7 @@ import { parseCSV, autoDetectColumns, normalizePhoneNumber, parsePastedText, pro
 import { extractVariables, renderTemplate, validateBatchVariables, renderBatchRecipients } from './utils/template.js';
 import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
+import { calculateNextRecurringDate, calculateTotalCycles, formatRecurrenceSummary, RECURRING_FREQUENCY } from './utils/recurring.js';
 
 // Application State
 let currentTab = 'tab-quick-ping';
@@ -192,11 +193,15 @@ function checkWizardActiveBatch() {
 function updateBatchesCountBadges() {
   const all = currentBatches.length;
   const active = currentBatches.filter((b) => b.status === BATCH_STATUS.IN_PROGRESS || b.status === BATCH_STATUS.OVERDUE).length;
+  const recurring = currentBatches.filter((b) => b.isRecurring && b.status !== BATCH_STATUS.COMPLETED && b.status !== BATCH_STATUS.CANCELLED).length;
   const scheduled = currentBatches.filter((b) => b.status === BATCH_STATUS.SCHEDULED).length;
   const completed = currentBatches.filter((b) => b.status === BATCH_STATUS.COMPLETED).length;
 
   document.getElementById('countAll').textContent = all;
   document.getElementById('countActive').textContent = active;
+  if (document.getElementById('countRecurring')) {
+    document.getElementById('countRecurring').textContent = recurring;
+  }
   document.getElementById('countScheduled').textContent = scheduled;
   document.getElementById('countCompleted').textContent = completed;
 
@@ -227,6 +232,7 @@ function renderBatchesGrid() {
 
   let filtered = currentBatches.filter((b) => {
     if (batchFilter === 'active') return b.status === BATCH_STATUS.IN_PROGRESS || b.status === BATCH_STATUS.OVERDUE;
+    if (batchFilter === 'recurring') return b.isRecurring;
     if (batchFilter === 'scheduled') return b.status === BATCH_STATUS.SCHEDULED;
     if (batchFilter === 'completed') return b.status === BATCH_STATUS.COMPLETED;
     return true;
@@ -259,10 +265,18 @@ function renderBatchesGrid() {
       ? new Date(batch.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
       : 'Unscheduled';
 
+    const isRec = batch.isRecurring && batch.recurringConfig;
+    const recurringBadge = isRec
+      ? `<span class="badge badge-recurring">🔁 ${escapeHtml(batch.recurringConfig.frequency || 'RECURRING').toUpperCase()} (${batch.recurringConfig.currentCycle || 1}/${batch.recurringConfig.totalCycles || '?'})</span>`
+      : '';
+
     card.innerHTML = `
       <div class="card-top-row">
         <h3 class="card-title">${escapeHtml(batch.title || 'Untitled Follow-up')}</h3>
-        <span class="badge badge-${batch.status}">${batch.status.replace('_', ' ')}</span>
+        <div style="display:flex; gap:6px; align-items:center;">
+          ${recurringBadge}
+          <span class="badge badge-${batch.status}">${batch.status.replace('_', ' ')}</span>
+        </div>
       </div>
 
       <div class="card-meta-row">
@@ -270,8 +284,10 @@ function renderBatchesGrid() {
           <circle cx="12" cy="12" r="10"></circle>
           <polyline points="12 6 12 12 16 14"></polyline>
         </svg>
-        <span>${scheduledDateStr}</span>
+        <span>${isRec ? `Next: ${scheduledDateStr}` : scheduledDateStr}</span>
         <span>•</span>
+        <span>${isRec ? `Day ${batch.recurringConfig.currentCycle || 1} of ${batch.recurringConfig.totalCycles || '?'}` : `${total} Recipient${total !== 1 ? 's' : ''}`}</span>
+      </div>
         <span>${total} Recipient${total !== 1 ? 's' : ''}</span>
       </div>
 
@@ -891,6 +907,90 @@ function setupQuickPingTab() {
   const quickToastTitle = document.getElementById('quickToastTitle');
   const quickToastMessage = document.getElementById('quickToastMessage');
 
+  // Recurring Schedule Controls
+  const toggleRecurring = document.getElementById('toggleRecurringFollowup');
+  const recurringOptionsContainer = document.getElementById('recurringOptionsContainer');
+  const recurringControlCard = document.getElementById('recurringControlCard');
+  const recurringTimeOfDay = document.getElementById('recurringTimeOfDay');
+  const recurringStartDate = document.getElementById('recurringStartDate');
+  const recurringEndDate = document.getElementById('recurringEndDate');
+  const recurringLiveSummary = document.getElementById('recurringLiveSummary');
+  const btnSaveSingleFollowup = document.getElementById('btnSaveSingleFollowup');
+
+  let selectedFrequency = 'daily';
+
+  // Default dates: Start = Today, End = Today + 7 days
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const next7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (recurringStartDate && !recurringStartDate.value) recurringStartDate.value = todayStr;
+  if (recurringEndDate && !recurringEndDate.value) recurringEndDate.value = next7Days;
+
+  function updateRecurringSummary() {
+    if (!toggleRecurring || !toggleRecurring.checked) return;
+    const config = {
+      frequency: selectedFrequency,
+      timeOfDay: recurringTimeOfDay?.value || '09:00',
+      startDate: recurringStartDate?.value || todayStr,
+      endDate: recurringEndDate?.value || next7Days
+    };
+    const summaryText = formatRecurrenceSummary(config);
+    if (recurringLiveSummary) {
+      recurringLiveSummary.innerHTML = `Will remind you <strong>${summaryText}</strong>`;
+    }
+    const cycles = calculateTotalCycles(config.frequency, config.startDate, config.endDate);
+    if (btnSaveSingleFollowup) {
+      btnSaveSingleFollowup.textContent = `🔁 Schedule Recurring Follow-up (${cycles} Messages)`;
+    }
+  }
+
+  toggleRecurring?.addEventListener('change', () => {
+    if (toggleRecurring.checked) {
+      recurringOptionsContainer?.classList.remove('hidden');
+      recurringControlCard?.classList.add('active');
+      updateRecurringSummary();
+    } else {
+      recurringOptionsContainer?.classList.add('hidden');
+      recurringControlCard?.classList.remove('active');
+      if (btnSaveSingleFollowup) {
+        btnSaveSingleFollowup.textContent = '⏰ Schedule 1-on-1 Follow-up';
+      }
+    }
+  });
+
+  // Frequency pills
+  const freqPills = document.querySelectorAll('.btn-freq-pill');
+  freqPills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      freqPills.forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      selectedFrequency = pill.getAttribute('data-freq') || 'daily';
+      updateRecurringSummary();
+    });
+  });
+
+  // Range preset buttons
+  const rangePresets = document.querySelectorAll('.btn-range-preset');
+  rangePresets.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      rangePresets.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const range = btn.getAttribute('data-range');
+      const startD = recurringStartDate?.value ? new Date(recurringStartDate.value) : new Date();
+      let days = 7;
+      if (range === '14d') days = 14;
+      if (range === '30d') days = 30;
+      const targetEnd = new Date(startD.getTime() + days * 24 * 60 * 60 * 1000);
+      if (recurringEndDate) {
+        recurringEndDate.value = targetEnd.toISOString().slice(0, 10);
+      }
+      updateRecurringSummary();
+    });
+  });
+
+  recurringTimeOfDay?.addEventListener('input', updateRecurringSummary);
+  recurringStartDate?.addEventListener('input', updateRecurringSummary);
+  recurringEndDate?.addEventListener('input', updateRecurringSummary);
+
   // Set default timing to Today in 5 mins (not 10-15 mins ahead!)
   applyTimingPreset('5m');
 
@@ -1038,22 +1138,66 @@ function setupQuickPingTab() {
         return;
       }
 
-      // Safe date parsing from input
-      let scheduledDate;
-      const val = singleScheduleTime ? singleScheduleTime.value : null;
-      if (val) {
-        const p = new Date(val);
-        scheduledDate = isNaN(p.getTime()) ? new Date(Date.now() + 15 * 60 * 1000) : p;
+      const isRecurring = toggleRecurring && toggleRecurring.checked;
+      let scheduledAt;
+      let recurringConfig = null;
+      let batchTitle = `Follow-up with ${name}`;
+
+      if (isRecurring) {
+        const timeOfDay = recurringTimeOfDay?.value || '09:00';
+        const startDate = recurringStartDate?.value;
+        const endDate = recurringEndDate?.value;
+
+        if (!startDate || !endDate) {
+          alert('Please enter both a Start Date and an End Date for the recurring schedule.');
+          return;
+        }
+
+        if (new Date(startDate) > new Date(endDate)) {
+          alert('Start Date cannot be after End Date.');
+          return;
+        }
+
+        const totalCycles = calculateTotalCycles(selectedFrequency, startDate, endDate);
+        recurringConfig = {
+          frequency: selectedFrequency,
+          timeOfDay,
+          startDate,
+          endDate,
+          totalCycles,
+          currentCycle: 1,
+          history: []
+        };
+
+        const firstOccurrence = calculateNextRecurringDate(recurringConfig, new Date());
+        if (!firstOccurrence) {
+          alert('The chosen recurring schedule date range has already ended. Please select future dates.');
+          return;
+        }
+        scheduledAt = firstOccurrence.toISOString();
+
+        const freqLabel = selectedFrequency === 'weekly' ? 'Weekly' : selectedFrequency === 'weekdays' ? 'Weekday' : 'Daily';
+        batchTitle = `🔁 ${freqLabel} Follow-up with ${name}`;
       } else {
-        scheduledDate = new Date(Date.now() + 15 * 60 * 1000);
+        // Safe one-time date parsing from input
+        let scheduledDate;
+        const val = singleScheduleTime ? singleScheduleTime.value : null;
+        if (val) {
+          const p = new Date(val);
+          scheduledDate = isNaN(p.getTime()) ? new Date(Date.now() + 15 * 60 * 1000) : p;
+        } else {
+          scheduledDate = new Date(Date.now() + 15 * 60 * 1000);
+        }
+        scheduledAt = scheduledDate.toISOString();
       }
 
-      const scheduledAt = scheduledDate.toISOString();
       const rendered = renderTemplate(message, { name, phone: norm.normalized });
 
       const batch = {
-        title: `Follow-up with ${name}`,
+        title: batchTitle,
         type: 'single',
+        isRecurring: !!isRecurring,
+        recurringConfig,
         templateBody: message,
         recipients: [{
           id: `rec_single_${Date.now()}`,
@@ -1086,8 +1230,13 @@ function setupQuickPingTab() {
 
       // Show inline success toast
       if (quickToast) {
-        quickToastTitle.textContent = `Scheduled with ${name}!`;
-        quickToastMessage.textContent = `Reminder set for ${scheduledDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`;
+        if (isRecurring) {
+          quickToastTitle.textContent = `🔁 Recurring Follow-up Scheduled!`;
+          quickToastMessage.textContent = `${recurringConfig.frequency.toUpperCase()} at ${recurringConfig.timeOfDay} starting ${new Date(scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} (${recurringConfig.totalCycles} follow-ups total).`;
+        } else {
+          quickToastTitle.textContent = `Scheduled with ${name}!`;
+          quickToastMessage.textContent = `Reminder set for ${new Date(scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`;
+        }
         quickToast.classList.remove('hidden');
       }
 
