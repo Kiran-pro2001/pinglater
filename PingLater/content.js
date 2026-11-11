@@ -161,10 +161,61 @@
     });
   }
 
+  // Helper to physically strip the typed slash trigger (/gf, /cal, etc.) from composer's text nodes
+  function stripSlashTriggerFromComposer(root, query, shortcut) {
+    if (!root) return;
+    const slashPatterns = [];
+    if (query) {
+      slashPatterns.push(`/${query.toLowerCase()}`);
+    }
+    if (shortcut) {
+      slashPatterns.push(`/${shortcut.toLowerCase()}`);
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      let text = node.textContent;
+      let modified = false;
+
+      // 1. Remove explicit slash triggers like /gf, /cal, /pricing
+      for (const pattern of slashPatterns) {
+        if (!pattern) continue;
+        let idx = text.toLowerCase().indexOf(pattern);
+        while (idx !== -1) {
+          text = text.slice(0, idx) + text.slice(idx + pattern.length);
+          modified = true;
+          idx = text.toLowerCase().indexOf(pattern);
+        }
+      }
+
+      // 2. If the text starts with the naked query right at the very beginning (e.g. "gfHi..."), strip it
+      if (query && query.length >= 2) {
+        if (text.toLowerCase().startsWith(query.toLowerCase())) {
+          text = text.slice(query.length);
+          modified = true;
+        }
+      }
+
+      // 3. Clean any orphan slash if left alone at start of message
+      if (text.startsWith('/')) {
+        text = text.slice(1);
+        modified = true;
+      }
+
+      if (modified) {
+        node.textContent = text;
+      }
+    }
+  }
+
   // Insert snippet into WhatsApp Web's Lexical/contenteditable composer
   function insertSnippet(tpl, charactersToDelete, composer) {
     if (!composer) return;
-    composer.focus();
+    const root = composer.closest('div[contenteditable="true"]') ||
+                 document.querySelector('#main footer div[contenteditable="true"]') ||
+                 composer;
+    root.focus();
 
     // Replace {{name}} placeholder with current contact's name if detected
     let body = tpl.body || '';
@@ -175,89 +226,93 @@
       body = body.replace(/\{\{\s*name\s*\}\}/gi, 'there');
     }
 
-    const querySlash = currentActiveQuery ? `/${currentActiveQuery.toLowerCase()}` : '';
-    const shortcutSlash = tpl.shortcut ? `/${tpl.shortcut.toLowerCase()}` : '';
+    const query = (currentActiveQuery || '').trim();
+    const shortcut = (tpl.shortcut || '').trim();
 
-    // Step 1: Highlight and delete the slash trigger (/gf, /cal, etc.)
-    const raw = (composer.textContent || '').trim().replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
-    const isOnlySlash =
-      !raw ||
-      raw.toLowerCase() === querySlash ||
-      raw.toLowerCase() === shortcutSlash ||
-      (raw.startsWith('/') && !raw.includes(' '));
-
+    // 1. Delete typed slash query from selection range if active
     const sel = window.getSelection();
-
-    if (isOnlySlash) {
-      // If composer ONLY contains the slash command, select everything
+    if (sel && sel.rangeCount > 0) {
       try {
-        const range = document.createRange();
-        range.selectNodeContents(composer);
-        sel.removeAllRanges();
-        sel.addRange(range);
-        document.execCommand('delete');
-      } catch (e) {}
-    } else {
-      // If there was text before the slash command, highlight the slash command backwards
-      const deleteCount = querySlash.length || (currentActiveQuery ? currentActiveQuery.length + 1 : 0) || charactersToDelete || 3;
-      if (sel && sel.rangeCount > 0) {
-        for (let i = 0; i < deleteCount; i++) {
-          sel.modify('extend', 'backward', 'character');
+        const range = sel.getRangeAt(0);
+        let node = range.startContainer;
+        let offset = range.startOffset;
+
+        if (node && node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent;
+          const slashIdx = text.lastIndexOf('/', offset);
+          if (slashIdx !== -1) {
+            range.setStart(node, slashIdx);
+            range.setEnd(node, offset);
+            range.deleteContents();
+          }
+        } else {
+          range.deleteContents();
         }
-        try {
-          document.execCommand('delete');
-        } catch (e) {}
-      }
+      } catch (e) {}
     }
 
-    // Step 2: Native Synthetic Paste Event (Primary method for WhatsApp Web Lexical)
-    let handledByPaste = false;
+    // 2. Pre-strip the shortcut text from all text nodes in the composer
+    stripSlashTriggerFromComposer(root, query, shortcut);
+
+    // 3. Insert the snippet body using native document.execCommand('insertText')
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, body);
+    } catch (e) {}
+
+    // Fallback if execCommand was not handled: insert text node directly into selection
+    if (!inserted || !root.textContent.includes(body.slice(0, 10))) {
+      try {
+        const s = window.getSelection();
+        if (s && s.rangeCount > 0) {
+          const r = s.getRangeAt(0);
+          r.deleteContents();
+          const textNode = document.createTextNode(body);
+          r.insertNode(textNode);
+          r.setStartAfter(textNode);
+          r.collapse(true);
+          s.removeAllRanges();
+          s.addRange(r);
+        } else {
+          root.textContent = body;
+        }
+      } catch (e) {}
+    }
+
+    // 4. Post-strip: eradicate any /query prefix that may have been prepended by Lexical
+    stripSlashTriggerFromComposer(root, query, shortcut);
+
+    // 5. Dispatch input events so WhatsApp Web updates its Send button state
     try {
       const dt = new DataTransfer();
       dt.setData('text/plain', body);
-      const pasteEvt = new ClipboardEvent('paste', {
+      root.dispatchEvent(new InputEvent('input', {
         bubbles: true,
         cancelable: true,
-        clipboardData: dt
-      });
-      const allowed = composer.dispatchEvent(pasteEvt);
-      if (!allowed) {
-        handledByPaste = true;
-      }
-    } catch (e) {
-      console.warn('[PingLater] Paste event failed:', e);
-    }
-
-    // Step 3: Fallback insertText if paste was not consumed
-    if (!handledByPaste) {
-      try {
-        document.execCommand('insertText', false, body);
-      } catch (e) {}
-    }
-
-    // Step 4: Dispatch InputEvent to turn mic button into send button
-    try {
-      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: body }));
+        inputType: 'insertFromPaste',
+        data: body,
+        dataTransfer: dt
+      }));
+      root.dispatchEvent(new Event('input', { bubbles: true }));
     } catch (e) {}
 
-    // Step 5: Post-insertion safety cleanup:
-    // If Lexical somehow restored /gf or /cal at the very start of the text node, strip it
+    // 6. Asynchronous safety passes to defeat any delayed Lexical reconciliation
     setTimeout(() => {
-      try {
-        const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT);
-        let firstNode = walker.nextNode();
-        if (firstNode) {
-          const txt = firstNode.textContent || '';
-          if (querySlash && txt.toLowerCase().startsWith(querySlash)) {
-            firstNode.textContent = txt.slice(querySlash.length);
-            composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
-          } else if (shortcutSlash && txt.toLowerCase().startsWith(shortcutSlash)) {
-            firstNode.textContent = txt.slice(shortcutSlash.length);
-            composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
-          }
-        }
-      } catch (e) {}
-    }, 15);
+      stripSlashTriggerFromComposer(root, query, shortcut);
+      // Place caret at end of text
+      const s = window.getSelection();
+      if (s && root.lastChild) {
+        const r = document.createRange();
+        r.selectNodeContents(root);
+        r.collapse(false);
+        s.removeAllRanges();
+        s.addRange(r);
+      }
+    }, 20);
+
+    setTimeout(() => {
+      stripSlashTriggerFromComposer(root, query, shortcut);
+    }, 80);
 
     hidePopup();
   }
@@ -872,21 +927,14 @@
     const mainChat = document.querySelector('#main');
     if (!mainChat) return null;
 
-    // 1. Direct copyable-text with pre-plain-text
-    const textNodes = Array.from(mainChat.querySelectorAll('div.copyable-text[data-pre-plain-text], div[data-pre-plain-text]'));
-    if (textNodes.length > 0) {
-      return textNodes[textNodes.length - 1];
-    }
-
     const selectors = [
       'div[data-testid="msg-container"]',
-      'div.message-in',
-      'div.message-out',
-      'div[class*="message-in"]',
-      'div[class*="message-out"]',
       'div[data-id^="false_"]',
       'div[data-id^="true_"]',
-      'div[role="row"]'
+      '.message-in',
+      '.message-out',
+      'div[class*="message-in"]',
+      'div[class*="message-out"]'
     ];
 
     const bubbles = Array.from(mainChat.querySelectorAll(selectors.join(', '))).filter((b) => {
@@ -894,7 +942,15 @@
       return true;
     });
 
-    return bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
+    if (bubbles.length > 0) {
+      return bubbles[bubbles.length - 1];
+    }
+
+    // Fallback: search role="row" inside main chat
+    const rows = Array.from(mainChat.querySelectorAll('div[role="row"]')).filter((r) => {
+      return r.querySelector('[data-pre-plain-text], span[data-icon*="check"], .copyable-text');
+    });
+    return rows.length > 0 ? rows[rows.length - 1] : null;
   }
 
   function getLastBubbleId(bubble) {
@@ -910,7 +966,17 @@
   function isBubbleIncoming(bubble) {
     if (!bubble) return false;
 
-    // 1. Pre-plain-text header: [time, date] Sender:
+    // 1. Direct data-id prefix
+    const dataId = bubble.getAttribute('data-id') || bubble.dataset.id || bubble.querySelector('[data-id]')?.getAttribute('data-id') || '';
+    if (dataId.startsWith('false_')) return true;
+    if (dataId.startsWith('true_')) return false;
+
+    // 2. Class check
+    const classStr = (bubble.className || '') + ' ' + (bubble.firstElementChild?.className || '');
+    if (classStr.includes('message-in')) return true;
+    if (classStr.includes('message-out')) return false;
+
+    // 3. Pre-plain-text header: [time, date] Sender:
     const preTextEl = bubble.querySelector('[data-pre-plain-text]') || (bubble.hasAttribute('data-pre-plain-text') ? bubble : null);
     if (preTextEl) {
       const preText = preTextEl.getAttribute('data-pre-plain-text') || '';
@@ -918,21 +984,11 @@
       if (preText.length > 0) return true;
     }
 
-    // 2. Check for outgoing delivery / read tick marks (ticks only ever exist on outgoing messages)
+    // 4. Check for outgoing delivery / read tick marks (ticks only ever exist on outgoing messages)
     const hasTick = bubble.querySelector(
       'span[data-icon*="check"], span[data-testid*="check"], span[data-icon="msg-time"], [data-testid="msg-check"], [data-testid="msg-dblcheck"]'
     );
     if (hasTick) return false;
-
-    // 3. Direct data-id prefix
-    const dataId = bubble.getAttribute('data-id') || bubble.dataset.id || bubble.querySelector('[data-id]')?.getAttribute('data-id') || '';
-    if (dataId.startsWith('false_')) return true;
-    if (dataId.startsWith('true_')) return false;
-
-    // 4. Class check
-    const classStr = (bubble.className || '') + ' ' + (bubble.firstElementChild?.className || '');
-    if (classStr.includes('message-in')) return true;
-    if (classStr.includes('message-out')) return false;
 
     // 5. If it's a message bubble inside main chat and has no checkmark and isn't out, it's incoming
     const hasMsgContent = bubble.querySelector('.copyable-text, [data-testid="bubble-message-text"], span[dir="ltr"], span[dir="auto"]');
@@ -946,29 +1002,33 @@
   // Auto-Reply Detection: checks if the latest message bubble in active chat is an incoming reply
   function checkActiveChatForReply(activeSnooze) {
     if (!activeSnooze || activeSnooze.status !== 'awaiting') return false;
+    const lastBubble = getLastMessageBubble();
+    if (!lastBubble) return false;
 
-    // METHOD 1 (Direct Metadata): Check the latest copyable-text in #main with data-pre-plain-text
-    const textNodes = Array.from(document.querySelectorAll('#main div.copyable-text[data-pre-plain-text], #main div[data-pre-plain-text]'));
-    if (textNodes.length > 0) {
-      const lastNode = textNodes[textNodes.length - 1];
-      const preText = lastNode.getAttribute('data-pre-plain-text') || '';
-      if (preText && !preText.includes('You:')) {
-        console.log('[PingLater] Auto-Reply Detected via data-pre-plain-text:', preText);
+    const currentId = getLastBubbleId(lastBubble);
+    const isIncoming = isBubbleIncoming(lastBubble);
+
+    // If we recorded the last seen message ID at snooze creation time:
+    if (activeSnooze.lastSeenMessageId) {
+      if (currentId === activeSnooze.lastSeenMessageId) {
+        return false; // Still the same message, no new reply
+      }
+      if (isIncoming) {
+        console.log('[PingLater] Auto-Reply Detected! New incoming message from:', activeSnooze.contactName);
         resolveSnoozeManual(activeSnooze.id);
         showPingLaterToast('🎉', `${activeSnooze.contactName} replied! "Awaiting Reply" cleared.`);
         return true;
       }
+      return false;
     }
 
-    // METHOD 2 (Bubble Container): Check the latest message container
-    const lastBubble = getLastMessageBubble();
-    if (lastBubble && isBubbleIncoming(lastBubble)) {
-      console.log('[PingLater] Auto-Reply Detected via bubble container from:', activeSnooze.contactName);
+    // Fallback: If latest bubble is incoming, contact replied!
+    if (isIncoming) {
+      console.log('[PingLater] Auto-Reply Detected! Latest message is incoming from:', activeSnooze.contactName);
       resolveSnoozeManual(activeSnooze.id);
       showPingLaterToast('🎉', `${activeSnooze.contactName} replied! "Awaiting Reply" cleared.`);
       return true;
     }
-
     return false;
   }
 
