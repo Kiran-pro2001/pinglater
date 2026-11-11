@@ -141,10 +141,9 @@
   }
 
   // ==========================================
-  // 4. DESKTOP 3D MOUSE PARALLAX TILT
+  // 4. DESKTOP 3D MOUSE PARALLAX TILT WITH SPECULAR GLOW
   // ==========================================
   function init3DTilt() {
-    // Only enable on desktop with hover capability
     if (window.matchMedia('(hover: none) or (max-width: 992px)').matches) {
       return;
     }
@@ -161,10 +160,9 @@
 
       const updateTransform = () => {
         if (!isHovered) {
-          // Spring smoothly back to center
           currentX += (0 - currentX) * 0.12;
           currentY += (0 - currentY) * 0.12;
-          if (Math.abs(currentX) < 0.05 && Math.abs(currentY) < 0.05) {
+          if (Math.abs(currentX) < 0.04 && Math.abs(currentY) < 0.04) {
             el.style.transform = '';
             cancelAnimationFrame(animationFrame);
             animationFrame = null;
@@ -175,7 +173,7 @@
           currentY += (targetY - currentY) * 0.12;
         }
 
-        el.style.transform = `perspective(1000px) rotateX(${currentY}deg) rotateY(${currentX}deg)`;
+        el.style.transform = `perspective(1100px) rotateX(${currentY}deg) rotateY(${currentX}deg) translateZ(10px)`;
         animationFrame = requestAnimationFrame(updateTransform);
       };
 
@@ -193,9 +191,8 @@
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
 
-        // Max 4 degrees tilt
-        targetX = ((x - centerX) / centerX) * 3.5;
-        targetY = -((y - centerY) / centerY) * 3.5;
+        targetX = ((x - centerX) / centerX) * 4.5;
+        targetY = -((y - centerY) / centerY) * 4.5;
       });
 
       el.addEventListener('mouseleave', () => {
@@ -207,7 +204,7 @@
   }
 
   // ==========================================
-  // 5. LOW-CPU AMBIENT BACKGROUND CANVAS
+  // 5. THEME-DRIVEN 3D AMBIENT WHATSAPP SALES HUD CANVAS
   // ==========================================
   function initAmbientCanvas() {
     const canvas = document.getElementById('ambient-canvas');
@@ -221,9 +218,19 @@
     let isTabVisible = !document.hidden;
     let animId = null;
 
+    let mouseX = width / 2;
+    let mouseY = height / 2;
+    let targetMouseX = mouseX;
+    let targetMouseY = mouseY;
+
     window.addEventListener('resize', () => {
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      targetMouseX = e.clientX;
+      targetMouseY = e.clientY;
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -236,55 +243,151 @@
       }
     });
 
-    // Gentle floating nodes
-    const nodeCount = Math.min(22, Math.floor(window.innerWidth / 70));
-    const nodes = [];
+    // 3D Floating HUD Token Definitions (PingLater Theme)
+    const tokenPresets = [
+      { type: 'pill', icon: '⏳', label: '24h Timer', sub: 'Awaiting', color: '#128C7E' },
+      { type: 'pill', icon: '⚡', label: '/pricing', sub: 'Snippet', color: '#075E54' },
+      { type: 'pill', icon: '🎯', label: 'Step 2 Due', sub: 'Cadence', color: '#D97706' },
+      { type: 'tick', icon: '✓✓', label: 'Read', sub: '', color: '#25D366' },
+      { type: 'pill', icon: '⏳', label: '59m 24s', sub: 'Live', color: '#128C7E' },
+      { type: 'pill', icon: '⚡', label: '/call-link', sub: 'Snippet', color: '#075E54' },
+      { type: 'pill', icon: '🛡️', label: 'Anti-Ban Safe', sub: '0% Risk', color: '#128C7E' },
+      { type: 'tick', icon: '✓✓', label: 'Delivered', sub: '', color: '#25D366' },
+    ];
 
-    for (let i = 0; i < nodeCount; i++) {
-      nodes.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        radius: Math.random() * 2 + 1,
-        vx: (Math.random() - 0.5) * 0.35,
-        vy: (Math.random() - 0.5) * 0.35,
-        alpha: Math.random() * 0.25 + 0.1
-      });
-    }
+    const tokens = tokenPresets.map((preset, idx) => {
+      return {
+        ...preset,
+        x: (width / (tokenPresets.length + 1)) * (idx + 1) + (Math.random() - 0.5) * 80,
+        y: Math.random() * (height * 0.85) + height * 0.08,
+        z: 0.35 + Math.random() * 0.65, // Z-depth layer (0.35 = background, 1.0 = foreground)
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.25,
+        floatPhase: Math.random() * Math.PI * 2,
+        floatSpeed: 0.0015 + Math.random() * 0.0015,
+        alpha: 0.22 + Math.random() * 0.18
+      };
+    });
 
-    function render() {
+    // Radar Ping Waves (Concentric sonar pulses)
+    const radarPings = [
+      { x: width * 0.25, y: height * 0.35, radius: 20, maxRadius: 280, speed: 0.45, alpha: 0.12 },
+      { x: width * 0.75, y: height * 0.65, radius: 100, maxRadius: 320, speed: 0.35, alpha: 0.10 }
+    ];
+
+    let lastTime = performance.now();
+
+    function render(now) {
       if (!isTabVisible) return;
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
 
       ctx.clearRect(0, 0, width, height);
 
-      // Draw faint connections
-      for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        n.x += n.vx;
-        n.y += n.vy;
+      // Smooth mouse lerp
+      mouseX += (targetMouseX - mouseX) * 0.05;
+      mouseY += (targetMouseY - mouseY) * 0.05;
 
-        if (n.x < 0) n.x = width;
-        if (n.x > width) n.x = 0;
-        if (n.y < 0) n.y = height;
-        if (n.y > height) n.y = 0;
+      const mouseOffsetFactorX = (mouseX - width / 2) / (width / 2);
+      const mouseOffsetFactorY = (mouseY - height / 2) / (height / 2);
 
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(18, 140, 126, ${n.alpha})`;
-        ctx.fill();
-
-        for (let j = i + 1; j < nodes.length; j++) {
-          const n2 = nodes[j];
-          const dist = Math.hypot(n.x - n2.x, n.y - n2.y);
-          if (dist < 140) {
-            ctx.beginPath();
-            ctx.moveTo(n.x, n.y);
-            ctx.lineTo(n2.x, n2.y);
-            ctx.strokeStyle = `rgba(18, 140, 126, ${0.12 * (1 - dist / 140)})`;
-            ctx.lineWidth = 0.8;
-            ctx.stroke();
-          }
+      // 1. Draw Radar Sonar Waves (Signaling Anti-Ban Lead Tracking)
+      radarPings.forEach((ping) => {
+        ping.radius += ping.speed;
+        if (ping.radius > ping.maxRadius) {
+          ping.radius = 10;
         }
-      }
+        const progress = ping.radius / ping.maxRadius;
+        const currentAlpha = ping.alpha * (1 - progress);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(ping.x, ping.y, ping.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(18, 140, 126, ${currentAlpha})`;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // Inner harmonic ring
+        if (ping.radius > 60) {
+          ctx.beginPath();
+          ctx.arc(ping.x, ping.y, ping.radius * 0.6, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(37, 211, 102, ${currentAlpha * 0.6})`;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
+
+      // 2. Draw Floating 3D HUD Tokens with Parallax Depth
+      tokens.forEach((t) => {
+        t.x += t.vx;
+        t.y += t.vy;
+
+        if (t.x < 30) t.x = width - 40;
+        if (t.x > width - 30) t.x = 40;
+        if (t.y < 30) t.y = height - 40;
+        if (t.y > height - 30) t.y = 40;
+
+        const floatY = Math.sin(now * t.floatSpeed + t.floatPhase) * (10 * t.z);
+        const parallaxX = mouseOffsetFactorX * (35 * t.z);
+        const parallaxY = mouseOffsetFactorY * (25 * t.z);
+
+        const renderX = t.x + parallaxX;
+        const renderY = t.y + floatY + parallaxY;
+        const scale = 0.75 + t.z * 0.35;
+
+        ctx.save();
+        ctx.translate(renderX, renderY);
+        ctx.scale(scale, scale);
+
+        if (t.type === 'tick') {
+          // Double tick checkmark badge
+          ctx.font = '700 15px -apple-system, sans-serif';
+          ctx.fillStyle = `rgba(37, 211, 102, ${t.alpha * 1.5})`;
+          ctx.shadowColor = 'rgba(37, 211, 102, 0.4)';
+          ctx.shadowBlur = 8;
+          ctx.fillText(t.icon, -10, 5);
+        } else {
+          // Frosted 3D HUD Pill
+          const pillWidth = 115;
+          const pillHeight = 28;
+          const radius = 14;
+
+          // Shadow
+          ctx.shadowColor = 'rgba(18, 140, 126, 0.14)';
+          ctx.shadowBlur = 12 * t.z;
+          ctx.shadowOffsetY = 4 * t.z;
+
+          // Pill Background
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(-pillWidth / 2, -pillHeight / 2, pillWidth, pillHeight, radius);
+          } else {
+            ctx.rect(-pillWidth / 2, -pillHeight / 2, pillWidth, pillHeight);
+          }
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.72 + t.z * 0.22})`;
+          ctx.fill();
+
+          // Pill Border
+          ctx.strokeStyle = `rgba(18, 140, 126, ${0.18 + t.z * 0.15})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          // Clear shadow for crisp text
+          ctx.shadowColor = 'transparent';
+
+          // Icon
+          ctx.font = '12px -apple-system, sans-serif';
+          ctx.fillText(t.icon, -pillWidth / 2 + 10, 4);
+
+          // Label
+          ctx.font = '600 11px -apple-system, sans-serif';
+          ctx.fillStyle = t.color;
+          ctx.fillText(t.label, -pillWidth / 2 + 28, 4);
+        }
+
+        ctx.restore();
+      });
 
       animId = requestAnimationFrame(render);
     }
