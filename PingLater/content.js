@@ -343,6 +343,7 @@
       chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
         snoozes = res.pinglater_snoozed_chats || [];
         updateSnoozePill();
+        updateLeftChatListBadges();
       });
     }
   }
@@ -353,6 +354,7 @@
       if (area === 'local' && changes.pinglater_snoozed_chats) {
         snoozes = changes.pinglater_snoozed_chats.newValue || [];
         updateSnoozePill();
+        updateLeftChatListBadges();
       }
     });
   }
@@ -723,9 +725,76 @@
     }, durationMs);
   }
 
+  // ==========================================
+  // LEFT CHAT LIST BADGES (#pane-side)
+  // Shows countdown pills directly on the WhatsApp conversation list
+  // ==========================================
+  function updateLeftChatListBadges() {
+    const pane = document.querySelector('#pane-side');
+    if (!pane || !snoozes || snoozes.length === 0) {
+      // Clean up any old badges if no snoozes exist
+      if (pane) {
+        pane.querySelectorAll('.pinglater-chatlist-badge').forEach((b) => b.remove());
+      }
+      return;
+    }
+
+    // Attach scroll listener once
+    if (!pane.dataset.pinglaterListened) {
+      pane.dataset.pinglaterListened = 'true';
+      pane.addEventListener('scroll', () => setTimeout(updateLeftChatListBadges, 100), { passive: true });
+    }
+
+    const titleElements = pane.querySelectorAll('span[title]');
+    const now = Date.now();
+
+    titleElements.forEach((el) => {
+      if (el.classList.contains('pinglater-chatlist-badge')) return;
+
+      const title = (el.getAttribute('title') || el.textContent || '').trim();
+      if (!title) return;
+
+      const cleanPhone = title.replace(/\D/g, '');
+      const lowerTitle = title.toLowerCase();
+
+      // Find matching active or due snooze
+      const match = snoozes.find((s) => {
+        if (!['awaiting', 'due'].includes(s.status)) return false;
+        if (cleanPhone && s.phone && String(s.phone).replace(/\D/g, '') === cleanPhone) return true;
+        if (lowerTitle && s.contactName && s.contactName.trim().toLowerCase() === lowerTitle) return true;
+        return false;
+      });
+
+      const parentContainer = el.parentElement;
+      if (!parentContainer) return;
+
+      let existingBadge = parentContainer.querySelector('.pinglater-chatlist-badge');
+
+      if (match) {
+        const isDue = match.status === 'due' || (match.dueAt && new Date(match.dueAt).getTime() <= now);
+        const badgeClass = isDue ? 'pinglater-chatlist-badge due' : 'pinglater-chatlist-badge awaiting';
+        const labelText = isDue ? '⏰ Due' : `⏳ ${formatRemainingTime(match.dueAt)}`;
+
+        if (existingBadge) {
+          existingBadge.className = badgeClass;
+          existingBadge.textContent = labelText;
+        } else {
+          const badge = document.createElement('span');
+          badge.className = badgeClass;
+          badge.textContent = labelText;
+          badge.title = `PingLater: Awaiting Reply (${match.durationHours || 48}h snooze)`;
+          el.insertAdjacentElement('afterend', badge);
+        }
+      } else if (existingBadge) {
+        existingBadge.remove();
+      }
+    });
+  }
+
   // Periodic polling for chat switches and observer attachment
   setInterval(() => {
     updateSnoozePill();
+    updateLeftChatListBadges();
     if (!activeChatObserver && document.querySelector('#main')) {
       initReplyObserver();
     }
@@ -737,6 +806,7 @@
       return; // Keep dropdown steady while user is selecting
     }
     setTimeout(updateSnoozePill, 200);
+    setTimeout(updateLeftChatListBadges, 300);
   });
 
   window.addEventListener('resize', updateSnoozePill);
