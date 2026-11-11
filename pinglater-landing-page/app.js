@@ -243,16 +243,22 @@
       }
     });
 
-    // 3D Floating HUD Token Definitions (PingLater Theme)
+    // 3D Floating HUD Token Definitions (PingLater Theme + ICP Outcome Tokens)
     const tokenPresets = [
-      { type: 'pill', icon: '⏳', label: '24h Timer', sub: 'Awaiting', color: '#128C7E' },
-      { type: 'pill', icon: '⚡', label: '/pricing', sub: 'Snippet', color: '#075E54' },
-      { type: 'pill', icon: '🎯', label: 'Step 2 Due', sub: 'Cadence', color: '#D97706' },
+      // Direct ROI & Target ICP Outcomes
+      { type: 'pill', icon: '🎉', label: 'Converted Lead in 48h', sub: 'Outcome', color: '#15803D' },
+      { type: 'pill', icon: '💰', label: 'Closed ₹50,000 Deal', sub: 'Revenue', color: '#075E54' },
+      { type: 'pill', icon: '🚀', label: '0 Ghosted Leads', sub: 'Outcome', color: '#128C7E' },
+      { type: 'pill', icon: '🤝', label: 'Paid Client Signed', sub: 'Closed', color: '#15803D' },
+      // Core Features & Anti-Ban Controls
+      { type: 'pill', icon: '⏳', label: '24h Timer Active', sub: 'Awaiting', color: '#128C7E' },
+      { type: 'pill', icon: '⚡', label: '/pricing-pitch', sub: 'Snippet', color: '#075E54' },
+      { type: 'pill', icon: '🎯', label: 'Step 2 Due Today', sub: 'Cadence', color: '#D97706' },
       { type: 'tick', icon: '✓✓', label: 'Read', sub: '', color: '#25D366' },
-      { type: 'pill', icon: '⏳', label: '59m 24s', sub: 'Live', color: '#128C7E' },
-      { type: 'pill', icon: '⚡', label: '/call-link', sub: 'Snippet', color: '#075E54' },
-      { type: 'pill', icon: '🛡️', label: 'Anti-Ban Safe', sub: '0% Risk', color: '#128C7E' },
-      { type: 'tick', icon: '✓✓', label: 'Delivered', sub: '', color: '#25D366' },
+      { type: 'pill', icon: '🛡️', label: '100% Anti-Ban Safe', sub: '0% Risk', color: '#128C7E' },
+      { type: 'pill', icon: '⚡', label: '1-Sec Follow-Up Sent', sub: 'Speed', color: '#075E54' },
+      { type: 'tick', icon: '✓✓', label: 'Auto-Halted', sub: '', color: '#25D366' },
+      { type: 'pill', icon: '⏳', label: '59m 24s Countdown', sub: 'Live', color: '#128C7E' },
     ];
 
     const tokens = tokenPresets.map((preset, idx) => {
