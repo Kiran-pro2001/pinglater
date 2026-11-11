@@ -43,11 +43,43 @@ export const DEFAULT_SETTINGS = {
 
 // Starter Templates seeded on first launch (Professional & Casual/Informal)
 export const SEED_TEMPLATES = [
-  // Professional Templates
+  // High-Utility Quick Snippets (In-Chat /shortcuts)
+  {
+    id: 'tpl_quick_meet',
+    title: 'Google Meet / Calendar Booking',
+    category: 'Professional',
+    shortcut: 'cal',
+    body: 'Hi {{name}}, here is my calendar link to grab a quick 15-min call: https://meet.google.com/ or https://calendly.com/\n\nPick whatever time slot works best for you!',
+    variables: ['name'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl_quick_pricing',
+    title: 'Standard Pricing Packages',
+    category: 'Professional',
+    shortcut: 'pricing',
+    body: 'Hi {{name}}, here are our standard packages:\n1️⃣ Starter: $499 (Core delivery & setup)\n2️⃣ Growth: $1,299 (Full feature rollout & support)\n3️⃣ Custom Enterprise: Tailored to your roadmap\n\nLet me know which tier fits your current stage!',
+    variables: ['name'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl_quick_payment',
+    title: 'Payment & Bank Account Details',
+    category: 'Professional',
+    shortcut: 'pay',
+    body: 'Here are the payment details for your invoice:\n• UPI ID: yourname@upi\n• Account: 50100XXXXXXX\n• IFSC/Routing: HDFC0001234\n\nPlease reply with a screenshot once transferred so we can generate your receipt!',
+    variables: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  // Professional Follow-ups
   {
     id: 'tpl_client_followup_prof',
     title: 'Client Proposal Follow-up (Professional)',
     category: 'Professional',
+    shortcut: 'proposal',
     body: 'Hi {{name}}, hope you\'re having a productive week. Following up on our discussion regarding {{topic}}. Did you get a chance to review the details? Let me know if you have any questions!',
     variables: ['name', 'topic'],
     createdAt: new Date().toISOString(),
@@ -57,6 +89,7 @@ export const SEED_TEMPLATES = [
     id: 'tpl_project_checkin_prof',
     title: 'Project Status Update (Professional)',
     category: 'Professional',
+    shortcut: 'update',
     body: 'Hi {{name}}, just checking in on the deliverables for {{project}}. Let me know if you need any input or review from my side.',
     variables: ['name', 'project'],
     createdAt: new Date().toISOString(),
@@ -66,6 +99,7 @@ export const SEED_TEMPLATES = [
     id: 'tpl_event_confirmation',
     title: 'Event Pass Confirmation (Professional)',
     category: 'Professional',
+    shortcut: 'pass',
     body: 'Hi {{name}}, your registration for {{event}} is confirmed! 🎟️\n\nAccess link: {{link}}\n\nLooking forward to seeing you there!',
     variables: ['name', 'event', 'link'],
     createdAt: new Date().toISOString(),
@@ -76,6 +110,7 @@ export const SEED_TEMPLATES = [
     id: 'tpl_casual_catchup',
     title: 'Hey What\'s Up! (Casual / Friendly)',
     category: 'Casual',
+    shortcut: 'catchup',
     body: 'Hey {{name}}, what\'s up! Long time, was just thinking about you. Hope all is well! Let\'s catch up soon ☕',
     variables: ['name'],
     createdAt: new Date().toISOString(),
@@ -85,6 +120,7 @@ export const SEED_TEMPLATES = [
     id: 'tpl_quick_nudge_casual',
     title: 'Quick Friendly Nudge (Casual)',
     category: 'Casual',
+    shortcut: 'nudge',
     body: 'Hey {{name}}! 👋 Just wanted to say hi and see how things are going on your end. Ping me when you get a free minute!',
     variables: ['name'],
     createdAt: new Date().toISOString(),
@@ -94,6 +130,7 @@ export const SEED_TEMPLATES = [
     id: 'tpl_miss_you_personal',
     title: 'Thinking of You / Check-in (Personal)',
     category: 'Casual',
+    shortcut: 'checkin',
     body: 'Hi {{name}}, hope you\'re having a great week! Just wanted to check in and see how you\'ve been doing. Let\'s talk soon ❤️',
     variables: ['name'],
     createdAt: new Date().toISOString(),
@@ -204,9 +241,23 @@ export class StorageService {
       // Merge any new seed templates that don't exist yet
       const existingIds = new Set(existingTemplates.map((t) => t.id));
       const missing = SEED_TEMPLATES.filter((t) => !existingIds.has(t.id));
+      let merged = [...existingTemplates];
+
       if (missing.length > 0) {
-        await StorageAdapter.set(STORAGE_KEYS.TEMPLATES, [...existingTemplates, ...missing]);
+        merged = [...merged, ...missing];
       }
+
+      // Backfill shortcuts on existing templates if missing
+      merged.forEach((tpl) => {
+        if (!tpl.shortcut) {
+          const match = SEED_TEMPLATES.find((st) => st.id === tpl.id);
+          if (match && match.shortcut) {
+            tpl.shortcut = match.shortcut;
+          }
+        }
+      });
+
+      await StorageAdapter.set(STORAGE_KEYS.TEMPLATES, merged);
     }
 
     const existingBatches = await this.getBatches();

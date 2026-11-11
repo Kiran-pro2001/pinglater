@@ -1569,6 +1569,8 @@ function setupTemplatesTab() {
     const id = document.getElementById('editTemplateId').value;
     const title = document.getElementById('templateTitleInput').value.trim();
     const category = document.getElementById('templateCategoryInput').value;
+    const shortcutRaw = document.getElementById('templateShortcutInput')?.value.trim() || '';
+    const shortcut = shortcutRaw.replace(/^\/+/, '').toLowerCase();
     const body = document.getElementById('templateBodyInput').value.trim();
 
     if (!title || !body) {
@@ -1581,6 +1583,7 @@ function setupTemplatesTab() {
       id: id || undefined,
       title,
       category,
+      shortcut: shortcut || undefined,
       body,
       variables: vars
     });
@@ -1619,10 +1622,14 @@ function renderTemplatesList() {
   filtered.forEach((tpl) => {
     const card = document.createElement('div');
     card.className = 'template-card';
+    const shortcutBadge = tpl.shortcut ? `<span class="badge-shortcut" title="In-chat shortcut">/${escapeHtml(tpl.shortcut)}</span>` : '';
     card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h4>${escapeHtml(tpl.title)}</h4>
-        <span class="badge badge-scheduled">${escapeHtml(tpl.category || 'General')}</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <h4 style="margin:0; font-size:15px; font-weight:700;">${escapeHtml(tpl.title)}</h4>
+        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+          ${shortcutBadge}
+          <span class="badge badge-scheduled">${escapeHtml(tpl.category || 'General')}</span>
+        </div>
       </div>
       <div class="tpl-bubble">${escapeHtml(tpl.body)}</div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:auto;">
@@ -1695,6 +1702,7 @@ function openTemplateModal(tpl = null) {
   const titleInput = document.getElementById('templateTitleInput');
   const catInput = document.getElementById('templateCategoryInput');
   const bodyInput = document.getElementById('templateBodyInput');
+  const shortcutInput = document.getElementById('templateShortcutInput');
   const idInput = document.getElementById('editTemplateId');
   const modalHeader = document.getElementById('templateModalTitle');
 
@@ -1704,12 +1712,14 @@ function openTemplateModal(tpl = null) {
     titleInput.value = tpl.title;
     catInput.value = tpl.category || 'General';
     bodyInput.value = tpl.body;
+    if (shortcutInput) shortcutInput.value = tpl.shortcut || '';
   } else {
     modalHeader.textContent = 'Create Message Template';
     idInput.value = '';
     titleInput.value = '';
     catInput.value = 'General';
     bodyInput.value = '';
+    if (shortcutInput) shortcutInput.value = '';
   }
 
   modal.classList.remove('hidden');
