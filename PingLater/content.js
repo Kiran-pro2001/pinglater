@@ -129,7 +129,12 @@
       li.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        insertSnippet(tpl, query.length + 1, composer);
+        const targetComposer = composer ||
+                               activeComposer ||
+                               document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                               document.querySelector('div[contenteditable="true"][data-lexical-editor="true"]') ||
+                               document.querySelector('#main footer div[contenteditable="true"]');
+        insertSnippet(tpl, (query || '').length + 1, targetComposer);
       });
 
       list.appendChild(li);
@@ -161,7 +166,7 @@
     });
   }
 
-  // Helper to physically strip the typed slash trigger (/gf, /cal, etc.) from composer's text nodes
+  // Helper to physically strip the typed slash trigger (/gf, /cal, etc.) from composer's text nodes if present
   function stripSlashTriggerFromComposer(root, query, shortcut) {
     if (!root) return;
     const slashPatterns = [];
@@ -211,13 +216,22 @@
 
   // Insert snippet into WhatsApp Web's Lexical/contenteditable composer
   function insertSnippet(tpl, charactersToDelete, composer) {
+    if (!composer) {
+      composer = document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                 document.querySelector('div[contenteditable="true"][data-lexical-editor="true"]') ||
+                 document.querySelector('#main footer div[contenteditable="true"]');
+    }
     if (!composer) return;
-    const root = composer.closest('div[contenteditable="true"]') ||
-                 document.querySelector('#main footer div[contenteditable="true"]') ||
-                 composer;
-    root.focus();
 
-    // Replace {{name}} placeholder with current contact's name if detected
+    const chatBox = composer.closest('div[contenteditable="true"]') ||
+                    document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                    document.querySelector('div[contenteditable="true"][data-lexical-editor="true"]') ||
+                    document.querySelector('#main footer div[contenteditable="true"]') ||
+                    composer;
+
+    chatBox.focus();
+
+    // Prepare body text with {{name}} variable resolution
     let body = tpl.body || '';
     const contactName = getActiveChatContactName();
     if (contactName) {
@@ -228,31 +242,44 @@
 
     const query = (currentActiveQuery || '').trim();
     const shortcut = (tpl.shortcut || '').trim();
+    const slashQuery = query ? `/${query.toLowerCase()}` : '';
+    const slashShortcut = shortcut ? `/${shortcut.toLowerCase()}` : '';
 
-    // 1. Delete typed slash query from selection range if active
+    // Check if composer only contains the slash trigger (/gf, /cal, etc.)
+    const rawContent = (chatBox.textContent || '').trim().replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+    const isOnlySlash =
+      !rawContent ||
+      rawContent.toLowerCase() === slashQuery ||
+      rawContent.toLowerCase() === slashShortcut ||
+      (rawContent.startsWith('/') && !rawContent.includes(' '));
+
     const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
+
+    if (isOnlySlash) {
+      // 1. Clean-slate: select all content inside chatBox and delete
       try {
-        const range = sel.getRangeAt(0);
-        let node = range.startContainer;
-        let offset = range.startOffset;
-
-        if (node && node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent;
-          const slashIdx = text.lastIndexOf('/', offset);
-          if (slashIdx !== -1) {
-            range.setStart(node, slashIdx);
-            range.setEnd(node, offset);
-            range.deleteContents();
-          }
-        } else {
-          range.deleteContents();
-        }
+        const range = document.createRange();
+        range.selectNodeContents(chatBox);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand('delete', false, null);
       } catch (e) {}
+    } else {
+      // 2. Preceding text exists: extend selection backward to highlight only the "/shortcut" trigger
+      const deleteCount = slashQuery.length || (query ? query.length + 1 : 0) || (shortcut ? shortcut.length + 1 : 0) || charactersToDelete || 3;
+      if (sel && sel.rangeCount > 0) {
+        try {
+          for (let i = 0; i < deleteCount; i++) {
+            sel.modify('extend', 'backward', 'character');
+          }
+          // If the selection doesn't start with '/', extend one more step to capture the slash
+          if (!sel.toString().startsWith('/') && sel.toString().length < deleteCount + 2) {
+            sel.modify('extend', 'backward', 'character');
+          }
+          document.execCommand('delete', false, null);
+        } catch (e) {}
+      }
     }
-
-    // 2. Pre-strip the shortcut text from all text nodes in the composer
-    stripSlashTriggerFromComposer(root, query, shortcut);
 
     // 3. Insert the snippet body using native document.execCommand('insertText')
     let inserted = false;
@@ -261,7 +288,7 @@
     } catch (e) {}
 
     // Fallback if execCommand was not handled: insert text node directly into selection
-    if (!inserted || !root.textContent.includes(body.slice(0, 10))) {
+    if (!inserted || !chatBox.textContent.includes(body.slice(0, 8))) {
       try {
         const s = window.getSelection();
         if (s && s.rangeCount > 0) {
@@ -274,45 +301,58 @@
           s.removeAllRanges();
           s.addRange(r);
         } else {
-          root.textContent = body;
+          chatBox.textContent = body;
         }
       } catch (e) {}
     }
 
-    // 4. Post-strip: eradicate any /query prefix that may have been prepended by Lexical
-    stripSlashTriggerFromComposer(root, query, shortcut);
-
-    // 5. Dispatch input events so WhatsApp Web updates its Send button state
+    // 4. Dispatch InputEvents so WhatsApp Web recognizes the typed message and activates the Send button
     try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', body);
-      root.dispatchEvent(new InputEvent('input', {
+      chatBox.dispatchEvent(new InputEvent('input', {
         bubbles: true,
         cancelable: true,
-        inputType: 'insertFromPaste',
-        data: body,
-        dataTransfer: dt
+        inputType: 'insertText',
+        data: body
       }));
-      root.dispatchEvent(new Event('input', { bubbles: true }));
+      chatBox.dispatchEvent(new Event('input', { bubbles: true }));
     } catch (e) {}
 
-    // 6. Asynchronous safety passes to defeat any delayed Lexical reconciliation
-    setTimeout(() => {
-      stripSlashTriggerFromComposer(root, query, shortcut);
-      // Place caret at end of text
-      const s = window.getSelection();
-      if (s && root.lastChild) {
-        const r = document.createRange();
-        r.selectNodeContents(root);
-        r.collapse(false);
-        s.removeAllRanges();
-        s.addRange(r);
-      }
-    }, 20);
+    // 5. CRITICAL VERIFICATION:
+    // If Lexical somehow restored /gf or /cal in front of the body (e.g. "/gfHi, good morning babes")
+    function verifyAndPurgePrefix() {
+      const current = (chatBox.textContent || '').trim();
+      const hasPrefix =
+        (slashQuery && current.toLowerCase().startsWith(slashQuery)) ||
+        (slashShortcut && current.toLowerCase().startsWith(slashShortcut)) ||
+        (current.startsWith('/') && current.includes(body.slice(0, 10)));
 
-    setTimeout(() => {
-      stripSlashTriggerFromComposer(root, query, shortcut);
-    }, 80);
+      if (hasPrefix) {
+        console.log('[PingLater] Detected lingering slash trigger in composer. Performing selectAll overwrite...');
+        try {
+          chatBox.focus();
+          const range = document.createRange();
+          range.selectNodeContents(chatBox);
+          const s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(range);
+          document.execCommand('delete', false, null);
+          document.execCommand('insertText', false, body);
+          chatBox.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: body
+          }));
+        } catch (e) {}
+      }
+    }
+
+    // Run verification immediately
+    verifyAndPurgePrefix();
+
+    // Run verification again after 25ms and 80ms to catch any delayed Lexical reconciliation
+    setTimeout(verifyAndPurgePrefix, 25);
+    setTimeout(verifyAndPurgePrefix, 80);
 
     hidePopup();
   }
@@ -357,8 +397,12 @@
         e.preventDefault();
         e.stopPropagation();
         const selectedTpl = activeMatches[selectedIndex];
-        if (selectedTpl && activeComposer) {
-          insertSnippet(selectedTpl, currentActiveQuery.length + 1, activeComposer);
+        const targetComposer = activeComposer ||
+                               document.querySelector('[data-testid="conversation-compose-box-input"]') ||
+                               document.querySelector('div[contenteditable="true"][data-lexical-editor="true"]') ||
+                               document.querySelector('#main footer div[contenteditable="true"]');
+        if (selectedTpl && targetComposer) {
+          insertSnippet(selectedTpl, (currentActiveQuery || '').length + 1, targetComposer);
         }
         return;
       }
