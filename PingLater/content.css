@@ -265,7 +265,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  z-index: 100000;
+  z-index: 2147483647 !important;
   animation: pinglaterFadeIn 0.15s ease-out;
 }
 

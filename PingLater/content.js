@@ -494,6 +494,27 @@
     }
 
     const activeSnooze = getActiveSnoozeForCurrentChat();
+    const activeContactId = info ? (info.phone || info.title) : 'none';
+    const desiredState = activeSnooze ? `awaiting_${activeSnooze.id}` : `idle_${activeContactId}`;
+
+    // If dropdown is currently open, do not overwrite DOM
+    const existingDropdown = container.querySelector('#pinglater-dropdown-snooze');
+    if (existingDropdown && existingDropdown.style.display === 'flex') {
+      return;
+    }
+
+    // If state hasn't changed, only update live countdown text without destroying DOM
+    if (container.dataset.currentState === desiredState) {
+      if (activeSnooze) {
+        const badge = container.querySelector('.pinglater-snooze-badge');
+        if (badge) {
+          badge.textContent = formatRemainingTime(activeSnooze.dueAt);
+        }
+      }
+      return;
+    }
+
+    container.dataset.currentState = desiredState;
 
     if (activeSnooze) {
       const remaining = formatRemainingTime(activeSnooze.dueAt);
@@ -507,11 +528,15 @@
         </div>
       `;
 
-      container.querySelector('.btn-replied')?.addEventListener('click', () => {
+      container.querySelector('.btn-replied')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        container.dataset.currentState = '';
         resolveSnoozeManual(activeSnooze.id);
       });
 
-      container.querySelector('.btn-cancel')?.addEventListener('click', () => {
+      container.querySelector('.btn-cancel')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        container.dataset.currentState = '';
         cancelSnooze(activeSnooze.id);
       });
     } else {
@@ -548,15 +573,18 @@
       const dropdown = container.querySelector('#pinglater-dropdown-snooze');
 
       trigger?.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
       });
 
       container.querySelectorAll('.pinglater-snooze-dropdown-item').forEach((item) => {
         item.addEventListener('click', (e) => {
+          e.preventDefault();
           e.stopPropagation();
           const hours = parseInt(item.dataset.hours, 10) || 48;
           dropdown.style.display = 'none';
+          container.dataset.currentState = '';
           createSnooze(hours);
         });
       });
@@ -703,11 +731,12 @@
     }
   }, 1500);
 
-  // Immediate snap when switching chats or resizing window
-  document.addEventListener('click', () => {
-    setTimeout(updateSnoozePill, 100);
-    setTimeout(updateSnoozePill, 400);
-    setTimeout(updateSnoozePill, 900);
+  // Immediate snap when switching chats or resizing window (ignore clicks inside snooze container)
+  document.addEventListener('click', (e) => {
+    if (snoozeContainer && snoozeContainer.contains(e.target)) {
+      return; // Keep dropdown steady while user is selecting
+    }
+    setTimeout(updateSnoozePill, 200);
   });
 
   window.addEventListener('resize', updateSnoozePill);
