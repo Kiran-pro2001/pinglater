@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PingLater — The Anti-Ban WhatsApp Follow-Up OS for Closers</title>
+  <meta name="description" content="PingLater transforms WhatsApp Web into an anti-ban sales engine with visual 'Awaiting Reply' countdown badges, instant slash snippets, and auto-stopping drip cadences.">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/icons/icon32.png">
+  
+  <!-- Inter & Plus Jakarta Sans Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Low-CPU Ambient Background Canvas -->
+  <canvas id="ambient-canvas"></canvas>
+
+  <!-- Navigation Bar -->
+  <header class="site-header">
+    <div class="nav-container">
+      <a href="#" class="brand-group">
+        <img src="assets/icons/icon48.png" alt="PingLater Logo" class="brand-logo" width="36" height="36">
+        <span class="brand-name">PingLater</span>
+        <span class="challenge-pill">Day 002 of 365</span>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#problem">The Problem</a>
+        <a href="#features">Features</a>
+        <a href="#comparison">Why PingLater</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="https://wa.me/918590658979?text=Hey%20Kiran%2C%20I%20want%20to%20get%20Lifetime%20Access%20to%20PingLater%20for%20my%20WhatsApp.%20How%20do%20I%20pay%20and%20get%20started%3F" 
+           target="_blank" 
+           rel="noopener noreferrer" 
+           class="btn-nav-cta">
+          <span>Get Access</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ========================================================
+         FOLD 1: FULL-VIEWPORT HERO (1440px Canvas)
+         ======================================================== -->
+    <section class="hero-section">
+      <div class="hero-content">
+        <div class="hero-pill-beacon">
+          <span class="beacon-pulse"></span>
+          <span>Zero Ban Risk • Native WhatsApp Web OS</span>
+        </div>
+
+        <h1 class="hero-headline">
+          <span>Stop Losing Deals to Silence on WhatsApp.</span>
+          <span class="headline-accent">The Zero-Ban Follow-Up OS for Closers.</span>
+        </h1>
+
+        <p class="hero-subhead">
+          PingLater transforms WhatsApp Web into an anti-ban sales workspace. Live 'Awaiting Reply' countdown badges alert you the second a lead goes cold, with instant slash snippets and smart cadences to close deals faster.
+        </p>
+
+        <div class="hero-cta-group">
+          <a href="https://wa.me/918590658979?text=Hey%20Kiran%2C%20I%20want%20to%20get%20Lifetime%20Access%20to%20PingLater%20for%20my%20WhatsApp.%20How%20do%20I%20pay%20and%20get%20started%3F" 
+             target="_blank" 
+             rel="noopener noreferrer" 
+             class="btn-hero-primary">
+            <span>Get Lifetime Access Now</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+
+          <div class="hero-trust-badges">
+            <span class="trust-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              100% Anti-Ban Safe
+            </span>
+            <span class="trust-separator">•</span>
+            <span class="trust-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              Zero Subscriptions
+            </span>
+            <span class="trust-separator">•</span>
+            <span class="trust-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              Local-First Privacy
+            </span>
+          </div>
+
+          <div class="urgency-counter-strip">
+            <span class="pulse-dot"></span>
+            <strong>28 of 100</strong> Early Founder Passes Claimed
+          </div>
+        </div>
+
+        <!-- ========================================================
+             INTERACTIVE LIVE WHATSAPP WEB HUD SIMULATOR
+             ======================================================== -->
+        <div class="hero-mockup-frame" data-tilt>
+          <div class="browser-chrome">
+            <div class="window-controls">
+              <span class="window-dot dot-red"></span>
+              <span class="window-dot dot-yellow"></span>
+              <span class="window-dot dot-green"></span>
+            </div>
+            <div class="browser-address-bar">
+              <span class="lock-icon">🔒</span>
+              <span class="url-text">web.whatsapp.com</span>
+            </div>
+            <div class="browser-pill-tag">PingLater HUD Active</div>
+          </div>
+
+          <div class="wa-sim-viewport">
+            <!-- Left Chat List -->
+            <div class="wa-sim-sidebar">
+              <div class="wa-sim-header">
+                <div class="wa-avatar-sm"></div>
+                <div class="wa-sim-actions">
+                  <span class="sim-dot"></span>
+                  <span class="sim-dot"></span>
+                  <span class="sim-dot"></span>
+                </div>
+              </div>
+
+              <div class="wa-sim-chatlist">
+                <!-- Chat Row 1: Overdue Lead -->
+                <div class="wa-chat-row overdue-row active-demo-row">
+                  <div class="wa-avatar-user avatar-1"></div>
+                  <div class="wa-chat-info">
+                    <div class="wa-chat-top">
+                      <span class="wa-contact-name">Aditya Sharma (Client)</span>
+                      <span class="wa-chat-time">10:45 AM</span>
+                    </div>
+                    <div class="wa-chat-bottom">
+                      <span class="wa-chat-msg">Proposal sent. Let me know what...</span>
+                    </div>
+                  </div>
+                  <!-- PingLater Injected Overdue Badge -->
+                  <div class="pinglater-sim-badge badge-due">
+                    <span class="sim-mini-bar"><span class="sim-mini-fill" style="width: 100%"></span></span>
+                    <span class="badge-txt">⚠️ OVERDUE 0s</span>
+                  </div>
+                </div>
+
+                <!-- Chat Row 2: Live Countdown Lead -->
+                <div class="wa-chat-row">
+                  <div class="wa-avatar-user avatar-2"></div>
+                  <div class="wa-chat-info">
+                    <div class="wa-chat-top">
+                      <span class="wa-contact-name">Amulya — Agency Partner</span>
+                      <span class="wa-chat-time">11:30 AM</span>
+                    </div>
+                    <div class="wa-chat-bottom">
+                      <span class="wa-chat-msg">Checking with the finance team...</span>
+                    </div>
+                  </div>
+                  <!-- PingLater Injected Active Timer Badge -->
+                  <div class="pinglater-sim-badge badge-awaiting">
+                    <span class="sim-mini-bar"><span class="sim-mini-fill" style="width: 58%"></span></span>
+                    <span class="badge-txt">⏳ 59m 24s</span>
+                  </div>
+                </div>
+
+                <!-- Chat Row 3: Follow-Up Step 2 Due -->
+                <div class="wa-chat-row">
+                  <div class="wa-avatar-user avatar-3"></div>
+                  <div class="wa-chat-info">
+                    <div class="wa-chat-top">
+                      <span class="wa-contact-name">Vikram Tech — Lead</span>
+                      <span class="wa-chat-time">Yesterday</span>
+                    </div>
+                    <div class="wa-chat-bottom">
+                      <span class="wa-chat-msg">Sounds good, will review tonight</span>
+                    </div>
+                  </div>
+                  <!-- PingLater Injected Cadence Badge -->
+                  <div class="pinglater-sim-badge badge-cadence">
+                    <span class="sim-mini-bar"><span class="sim-mini-fill" style="width: 75%"></span></span>
+                    <span class="badge-txt">🎯 Step 2 Due</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Active Conversation Main Area -->
+            <div class="wa-sim-main">
+              <!-- Header with Docked Snooze Pill -->
+              <div class="wa-main-header">
+                <div class="wa-main-user">
+                  <div class="wa-avatar-user avatar-1"></div>
+                  <div class="wa-main-meta">
+                    <span class="wa-main-name">Aditya Sharma (Client)</span>
+                    <span class="wa-main-status">online</span>
+                  </div>
+                </div>
+
+                <!-- Docked PingLater Snooze Pill -->
+                <div class="pinglater-sim-docked-pill">
+                  <span class="docked-icon">⏳</span>
+                  <span class="docked-title">Awaiting reply:</span>
+                  <span class="docked-timer" id="sim-live-timer">00h 00m 00s</span>
+                  <button type="button" class="docked-btn-replied" id="sim-replied-btn" title="Mark Replied">✓ Replied</button>
+                  <button type="button" class="docked-btn-close" title="Clear">✕</button>
+                </div>
+              </div>
+
+              <!-- Chat Messages Canvas -->
+              <div class="wa-main-canvas">
+                <div class="sim-msg-date">Today</div>
+                <div class="sim-bubble bubble-out">
+                  <span>Hey Aditya, here is the proposal we discussed for the Q4 revamp. Let me know what you think!</span>
+                  <span class="sim-bubble-meta">10:45 AM <span class="sim-tick">✓✓</span></span>
+                </div>
+                <div class="sim-alert-banner">
+                  <span>⚠️ Lead went cold (24h with no reply). Time to send follow-up cadence Step 2!</span>
+                </div>
+              </div>
+
+              <!-- Message Composer with Autocomplete Snippet Popup -->
+              <div class="wa-main-footer">
+                <!-- Snippet Autocomplete Floating Popup -->
+                <div class="pinglater-sim-snippet-popup">
+                  <div class="snippet-popup-header">
+                    <span>⚡ PingLater Snippets</span>
+                    <span class="match-count">1 found</span>
+                  </div>
+                  <div class="snippet-popup-item active-item">
+                    <span class="snippet-code">/followup-proposal</span>
+                    <span class="snippet-title">Proposal Follow-Up</span>
+                    <span class="snippet-preview">Hey Aditya, just floating this to the top of your inbox...</span>
+                  </div>
+                  <div class="snippet-popup-footer">
+                    <span>↵ Enter to insert</span>
+                    <span>Esc to close</span>
+                  </div>
+                </div>
+
+                <div class="sim-composer-box">
+                  <span class="sim-attach-icon">📎</span>
+                  <span class="sim-emoji-icon">😊</span>
+                  <div class="sim-input-text">
+                    <span class="typed-command">/followup-proposal</span><span class="sim-cursor"></span>
+                  </div>
+                  <button type="button" class="sim-send-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#128C7E"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <a href="#problem" class="hero-scroll-prompt" aria-label="Scroll to Problem Section">
+          <span>See why 80% of WhatsApp deals get lost</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        </a>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 2: 30-SECOND CINEMATIC WALKTHROUGH
+         ======================================================== -->
+    <section class="demo-walkthrough-section" id="demo">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">How It Works in 30 Seconds</span>
+          <h2 class="section-title">Zero Friction. Lives Inside Your WhatsApp Web.</h2>
+          <p class="section-lead">You never have to open an external CRM or switch tabs. PingLater is an intelligent heads-up display right where you chat.</p>
+        </div>
+
+        <div class="walkthrough-steps-grid">
+          <div class="walkthrough-step-card" data-tilt>
+            <div class="step-num">01</div>
+            <div class="step-icon-wrap">
+              <span class="step-emoji">⏳</span>
+            </div>
+            <h3 class="step-title">Dock an "Awaiting Reply" Timer</h3>
+            <p class="step-body">Just sent a pitch, quote, or invoice? Click the docked pill in your chat header and set a 1-hour, 24-hour, or custom reminder.</p>
+          </div>
+
+          <div class="walkthrough-step-card" data-tilt>
+            <div class="step-num">02</div>
+            <div class="step-icon-wrap">
+              <span class="step-emoji">📊</span>
+            </div>
+            <h3 class="step-title">Visual Progress on Chat List</h3>
+            <p class="step-body">A countdown progress bar ticks right beside the contact's name. You see who owes you a reply at a glance without opening every chat.</p>
+          </div>
+
+          <div class="walkthrough-step-card" data-tilt>
+            <div class="step-num">03</div>
+            <div class="step-icon-wrap">
+              <span class="step-emoji">⚡</span>
+            </div>
+            <h3 class="step-title">1-Second Slash Snippets</h3>
+            <p class="step-body">If they go cold, type <code>/followup</code> or <code>/pricing</code> to instantly insert personalized templates with <code>{{name}}</code> auto-filled.</p>
+          </div>
+
+          <div class="walkthrough-step-card" data-tilt>
+            <div class="step-num">04</div>
+            <div class="step-icon-wrap">
+              <span class="step-emoji">🎉</span>
+            </div>
+            <h3 class="step-title">Automatic Stop-on-Reply</h3>
+            <p class="step-body">The exact second the prospect messages back, PingLater detects the incoming reply, auto-clears the reminder, and stops all cadences.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 3: THE VISCERAL PROBLEM (3 Expanded Reality Cards + Founder Quote)
+         ======================================================== -->
+    <section class="problem-section" id="problem">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">The Silent Revenue Killer</span>
+          <h2 class="section-title">The ₹50,000 Deal You Lost Because You Forgot to Text Back.</h2>
+          <p class="section-lead">Most sales don't die from a harsh "No". They die because WhatsApp is designed for casual chatting, not closing deals.</p>
+        </div>
+
+        <div class="reality-cards-grid">
+          <!-- Card 1 -->
+          <div class="reality-card" data-tilt>
+            <div class="card-step-badge">The Reality #1</div>
+            <div class="reality-icon">📥</div>
+            <h3 class="reality-title">The Buried Proposal Disaster</h3>
+            <p class="reality-body">
+              You spend two hours tailoring a high-value proposal. 15 minutes after you hit send, your family group, gym chat, and client updates arrive. 
+            </p>
+            <p class="reality-body reality-contrast">
+              Your proposal gets pushed 20 chats down the screen. Within 48 hours, you completely forget to follow up—and your warm lead quietly signs with your competitor.
+            </p>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="reality-card" data-tilt>
+            <div class="card-step-badge">The Reality #2</div>
+            <div class="reality-icon">📑</div>
+            <h3 class="reality-title">The "Manual CRM" Friction Trap</h3>
+            <p class="reality-body">
+              You tried using Notion, spreadsheets, or HubSpot to track WhatsApp conversations. But switching tabs to manually log <em>"Sent quote to Rohit"</em> feels like clerical punishment.
+            </p>
+            <p class="reality-body reality-contrast">
+              Within four days, you stop updating the spreadsheet. Your CRM falls out of date, and you are back to guessing who owes you a reply.
+            </p>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="reality-card" data-tilt>
+            <div class="card-step-badge">The Reality #3</div>
+            <div class="reality-icon">🚫</div>
+            <h3 class="reality-title">The "Spam Bot" Ban Catastrophe</h3>
+            <p class="reality-body">
+              Desperate for automation, you look at third-party WhatsApp blast tools. They spam people using unauthorized socket APIs and get your primary business number permanently banned by Meta.
+            </p>
+            <p class="reality-body reality-contrast">
+              Losing your WhatsApp number means losing years of client trust and customer history overnight. You need automation, but zero ban risk.
+            </p>
+          </div>
+        </div>
+
+        <!-- Founder Quote Card -->
+        <div class="founder-quote-card" data-tilt>
+          <div class="founder-quote-content">
+            <div class="quote-mark">“</div>
+            <p class="quote-text">
+              I built PingLater because I was sick of losing agency clients not because our work was bad, but because a message sat unanswered for 48 hours. Most tools treat WhatsApp like a spam blaster. PingLater treats it like your most valuable revenue channel—with 100% human-in-the-loop review, zero ban risk, and live countdowns directly on your chats.
+            </p>
+            <div class="founder-profile">
+              <div class="founder-avatar-badge">KK</div>
+              <div class="founder-info">
+                <span class="founder-name">Kiran Kumar</span>
+                <span class="founder-title">Creator of PingLater • Ex-Software Engineer at Oracle</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 4: INTRODUCING THE SOLUTION & 4 PILLARS
+         ======================================================== -->
+    <section class="features-section" id="features">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">The Anti-Ban Sales OS</span>
+          <h2 class="section-title">Everything You Need to Close Deals on WhatsApp.</h2>
+          <p class="section-lead">Four lightweight, unblockable superpowers built natively into WhatsApp Web.</p>
+        </div>
+
+        <div class="features-bento-grid">
+          <!-- Pillar 1 -->
+          <div class="feature-card bento-wide" data-tilt>
+            <div class="feature-meta">
+              <span class="feature-tag">Pillar 01</span>
+              <h3 class="feature-title">Live "Awaiting Reply" Progress Badges</h3>
+              <p class="feature-body">
+                Never wonder who hasn't answered you. Dock a 1-hour, 24-hour, or custom snooze timer on any conversation. A visual progress bar ticks right on your chat list rows (`⏳ 59m 24s [==== ]`), turning into a vivid `⚠️ OVERDUE 0s` warning when time runs out.
+              </p>
+              <ul class="feature-check-list">
+                <li><span>✓</span> Live ticking hours, minutes, and seconds</li>
+                <li><span>✓</span> Visual elapsed progress bar directly on WhatsApp contact list</li>
+                <li><span>✓</span> Archive folder intelligence (shows snoozes inside archive without duplicates)</li>
+              </ul>
+            </div>
+            <div class="feature-visual-demo visual-countdown">
+              <div class="demo-badge-preview">
+                <div class="demo-badge-row">
+                  <span class="row-name">Madan — Zepto</span>
+                  <span class="demo-chip chip-green">⏳ 59m 24s <span class="chip-bar" style="width: 60%"></span></span>
+                </div>
+                <div class="demo-badge-row">
+                  <span class="row-name">Aditya — Client</span>
+                  <span class="demo-chip chip-red">⚠️ OVERDUE 0s</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pillar 2 -->
+          <div class="feature-card" data-tilt>
+            <div class="feature-meta">
+              <span class="feature-tag">Pillar 02</span>
+              <h3 class="feature-title">Instant Slash Snippets (`/shortcut`)</h3>
+              <p class="feature-body">
+                Highlight any text in a chat to click <em>"⚡ Save as Snippet"</em>. Type <code>/pricing</code>, <code>/cal</code>, or <code>/gf</code> directly in the composer to insert instant templates with <code>{{name}}</code> dynamically replaced.
+              </p>
+              <ul class="feature-check-list">
+                <li><span>✓</span> 1-click text selection clipper</li>
+                <li><span>✓</span> Keyboard autocomplete with zero delay</li>
+                <li><span>✓</span> Full snippet dashboard editor & categorizer</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Pillar 3 -->
+          <div class="feature-card" data-tilt>
+            <div class="feature-meta">
+              <span class="feature-tag">Pillar 03</span>
+              <h3 class="feature-title">Multi-Step Drip Cadences with Auto-Stop</h3>
+              <p class="feature-body">
+                Enroll leads into 3-step follow-up pipelines (Day 1 $\rightarrow$ Day 3 $\rightarrow$ Day 7). The moment a lead replies, PingLater halts the cadence automatically so you never look robotic.
+              </p>
+              <ul class="feature-check-list">
+                <li><span>✓</span> Visual sequence builder with delays</li>
+                <li><span>✓</span> Automatic stop-on-reply state machine</li>
+                <li><span>✓</span> Sidepanel queue with human safety pacing</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Pillar 4: Full-Width Card -->
+          <div class="feature-card bento-full" data-tilt>
+            <div class="feature-meta">
+              <span class="feature-tag">Pillar 04 • The Core Shield</span>
+              <h3 class="feature-title">100% Anti-Ban Architecture & Local-First Privacy</h3>
+              <p class="feature-body">
+                Spam blast bots get banned because they fire automated WebSocket events directly to WhatsApp servers. PingLater uses a 100% passive DOM overlay with randomized human-like pacing. Your customer contacts, chats, and templates stay strictly inside your browser's local storage.
+              </p>
+              <div class="feature-stat-strip">
+                <div class="stat-item">
+                  <span class="stat-value">0%</span>
+                  <span class="stat-label">Ban Risk (Meta-Compliant)</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-value">100%</span>
+                  <span class="stat-label">Local Browser Storage</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-value">10x</span>
+                  <span class="stat-label">Faster Daily Follow-Ups</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 5: THE ONE-LINER COMPARISON MATRIX
+         ======================================================== -->
+    <section class="comparison-section" id="comparison">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">The Honest Comparison</span>
+          <h2 class="section-title">Why PingLater Succeeds, Where Others Fail?</h2>
+          <p class="section-lead">See how PingLater compares to spam blast bots and manual spreadsheets.</p>
+        </div>
+
+        <div class="comparison-table-wrapper">
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th class="col-feature">Feature / Capability</th>
+                <th class="col-comp">Spam Blast Tools</th>
+                <th class="col-comp">Manual Sheets / Notion</th>
+                <th class="col-flagship">PingLater (Anti-Ban OS)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="cell-label">Account Ban Safety</td>
+                <td class="cell-negative">🔴 High Risk (Gets Banned)</td>
+                <td class="cell-neutral">🟡 Safe (Manual)</td>
+                <td class="cell-flagship">🟢 100% Safe (Passive DOM)</td>
+              </tr>
+              <tr>
+                <td class="cell-label">Lives Inside WhatsApp Web</td>
+                <td class="cell-neutral">🟡 Clunky UI Overlay</td>
+                <td class="cell-negative">🔴 No (Must switch tabs)</td>
+                <td class="cell-flagship">🟢 Native Integrated HUD</td>
+              </tr>
+              <tr>
+                <td class="cell-label">Visual Countdown Progress Bars</td>
+                <td class="cell-negative">🔴 None</td>
+                <td class="cell-negative">🔴 None</td>
+                <td class="cell-flagship">🟢 Live Ticking on Chat List</td>
+              </tr>
+              <tr>
+                <td class="cell-label">Automatic Stop-on-Reply</td>
+                <td class="cell-negative">🔴 Blasts even after reply</td>
+                <td class="cell-negative">🔴 Manual check needed</td>
+                <td class="cell-flagship">🟢 Auto-clears the exact second</td>
+              </tr>
+              <tr>
+                <td class="cell-label">Instant Slash Snippets (`/shortcut`)</td>
+                <td class="cell-neutral">🟡 Limited / Slow</td>
+                <td class="cell-negative">🔴 Copy-pasting from Docs</td>
+                <td class="cell-flagship">🟢 1-Second Keyboard Autocomplete</td>
+              </tr>
+              <tr>
+                <td class="cell-label">Customer Data Privacy</td>
+                <td class="cell-negative">🔴 Uploaded to shady servers</td>
+                <td class="cell-neutral">🟡 Cloud spreadsheet</td>
+                <td class="cell-flagship">🟢 100% Local-First on Device</td>
+              </tr>
+              <tr>
+                <td class="cell-label">Pricing Structure</td>
+                <td class="cell-negative">🔴 $49–$99 / month</td>
+                <td class="cell-neutral">🟡 Free (Time-consuming)</td>
+                <td class="cell-flagship">🟢 One-Time Lifetime Pass</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 6: SOCIAL PROOF & TRANSFORMATIONS
+         ======================================================== -->
+    <section class="testimonials-section">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">Real Transformations</span>
+          <h2 class="section-title">From Ghosted Pitches to Closed Deals.</h2>
+          <p class="section-lead">Here is how freelancers, agencies, and founders use PingLater to recover thousands in lost pipeline.</p>
+        </div>
+
+        <div class="testimonials-grid">
+          <div class="testimonial-card" data-tilt>
+            <div class="test-stars">★★★★★</div>
+            <p class="test-body">
+              “I run a video production agency. 80% of our deals used to go cold because proposals got buried under WhatsApp group messages. With PingLater's 24-hour countdown bar, I recovered ₹1,20,000 in ghosted pitches in our very first week.”
+            </p>
+            <div class="test-author">
+              <div class="test-avatar">RS</div>
+              <div class="test-meta">
+                <span class="test-name">Rohan Sengupta</span>
+                <span class="test-role">Founder, PixelCraft Studios</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="testimonial-card" data-tilt>
+            <div class="test-stars">★★★★★</div>
+            <p class="test-body">
+              “The slash snippets alone are worth 10x the price. I highlighted my pricing breakdown once, saved it as <code>/rates</code>, and now I reply to incoming client leads in 2 seconds flat with their name auto-filled. Brilliant product.”
+            </p>
+            <div class="test-author">
+              <div class="test-avatar">AM</div>
+              <div class="test-meta">
+                <span class="test-name">Ananya Mishra</span>
+                <span class="test-role">Freelance UI/UX Consultant</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="testimonial-card" data-tilt>
+            <div class="test-stars">★★★★★</div>
+            <p class="test-body">
+              “I was terrified of using WhatsApp automation tools because my business number is my lifeline. PingLater gives me the follow-up cadences and snooze alerts I need with zero risk of getting banned. No monthly subscription is the cherry on top.”
+            </p>
+            <div class="test-author">
+              <div class="test-avatar">DK</div>
+              <div class="test-meta">
+                <span class="test-name">Devang Kothari</span>
+                <span class="test-role">B2B SaaS Sales Director</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 7: THE OFFER & BONUS STACK (Taker to Giver)
+         ======================================================== -->
+    <section class="offer-stack-section">
+      <div class="section-container">
+        <div class="offer-box" data-tilt>
+          <div class="offer-badge-pill">The Complete Sales Stack</div>
+          <h2 class="offer-title">Everything Included in Your Early Founder Pass</h2>
+          <p class="offer-lead">When you grab PingLater today, you don't just get a Chrome extension—you get a complete system to close WhatsApp leads with zero friction.</p>
+
+          <div class="bonus-stack-grid">
+            <div class="bonus-item">
+              <div class="bonus-check">✓</div>
+              <div class="bonus-text">
+                <strong>PingLater Pro Chrome Extension (Lifetime Access)</strong>
+                <span>Docked snooze pills, chatlist progress countdowns, snippet manager, and multi-step follow-up cadences.</span>
+              </div>
+              <span class="bonus-val">₹4,999 Value</span>
+            </div>
+
+            <div class="bonus-item">
+              <div class="bonus-check">✓</div>
+              <div class="bonus-text">
+                <strong>Bonus #1: The 15 High-Converting WhatsApp Sales Snippets Library</strong>
+                <span>Battle-tested scripts for proposal closing, payment follow-ups, and ghosted lead revival that you can load in 1 click.</span>
+              </div>
+              <span class="bonus-val">₹1,999 Value</span>
+            </div>
+
+            <div class="bonus-item">
+              <div class="bonus-check">✓</div>
+              <div class="bonus-text">
+                <strong>Bonus #2: The Anti-Ban WhatsApp Account Hygiene Playbook</strong>
+                <span>Technical rules to keep your sender reputation pristine and protect your business phone number forever.</span>
+              </div>
+              <span class="bonus-val">₹1,499 Value</span>
+            </div>
+
+            <div class="bonus-item">
+              <div class="bonus-check">✓</div>
+              <div class="bonus-text">
+                <strong>Bonus #3: Lifetime Sequence Blueprints & Feature Updates</strong>
+                <span>All future cadence blueprints, batch improvements, and speed updates with zero recurring fees.</span>
+              </div>
+              <span class="bonus-val">Priceless</span>
+            </div>
+          </div>
+
+          <div class="total-value-row">
+            <span>Total Value: <span class="strikethrough">₹8,497 / $129</span></span>
+            <span class="yours-today">Today: Yours for a single, small investment.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 8: HONEST, HUMAN PRICING (Transparent INR / USD Split)
+         ======================================================== -->
+    <section class="pricing-section" id="pricing">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">Honest & Transparent</span>
+          <h2 class="section-title">A Single, Honest Price. Zero Subscriptions.</h2>
+          <p class="section-lead">Most WhatsApp tools charge $49 every single month. We believe founders and builders deserve a tool they can own for life.</p>
+        </div>
+
+        <!-- Currency Selector Toggle -->
+        <div class="currency-toggle-wrapper">
+          <span class="toggle-label">Select Currency:</span>
+          <div class="currency-toggle-pill">
+            <button type="button" class="curr-btn active" id="btn-curr-inr" onclick="setCurrency('INR')">🇮🇳 INR (₹)</button>
+            <button type="button" class="curr-btn" id="btn-curr-usd" onclick="setCurrency('USD')">🌎 USD ($)</button>
+          </div>
+        </div>
+
+        <div class="pricing-card-wrap">
+          <div class="pricing-card flagship-card" data-tilt>
+            <div class="pricing-urgency-banner">
+              <span class="pulse-beacon"></span>
+              <span>Launch Pass: 28 of 100 Claimed</span>
+            </div>
+
+            <div class="pricing-header">
+              <h3 class="plan-name">Founder Lifetime Pass</h3>
+              <p class="plan-desc">For Indian & Global founders, freelancers, agencies, and sales professionals who close deals on WhatsApp.</p>
+              
+              <!-- Dynamic Price Display -->
+              <div class="price-display-box">
+                <div class="price-inr-view" id="price-inr">
+                  <span class="strike-price">₹7,999</span>
+                  <div class="main-price">
+                    <span class="curr-symbol">₹</span>
+                    <span class="price-num">1,499</span>
+                    <span class="price-tenure">one-time payment</span>
+                  </div>
+                  <span class="savings-tag">Save 81% • Lifetime Access</span>
+                </div>
+
+                <div class="price-usd-view" id="price-usd" style="display: none;">
+                  <span class="strike-price">$99</span>
+                  <div class="main-price">
+                    <span class="curr-symbol">$</span>
+                    <span class="price-num">39</span>
+                    <span class="price-tenure">one-time payment</span>
+                  </div>
+                  <span class="savings-tag">Save 60% • Lifetime Access</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="pricing-features-list">
+              <div class="p-item"><span>✓</span> <strong>Full Access to PingLater Chrome Extension</strong></div>
+              <div class="p-item"><span>✓</span> <strong>Live 'Awaiting Reply' Chatlist Progress Timers</strong> (Hours, Minutes, Seconds)</div>
+              <div class="p-item"><span>✓</span> <strong>Automatic Stop-on-Reply Engine</strong> (Auto-clears when lead texts back)</div>
+              <div class="p-item"><span>✓</span> <strong>Instant Slash Snippets (`/shortcut`)</strong> with <code>{{name}}</code> interpolation</div>
+              <div class="p-item"><span>✓</span> <strong>Multi-Step Drip Follow-Up Cadences</strong> (Visual Sequence Builder)</div>
+              <div class="p-item"><span>✓</span> <strong>Bonus: 15 High-Converting Sales Snippets Pack</strong></div>
+              <div class="p-item"><span>✓</span> <strong>Bonus: Anti-Ban Account Hygiene Playbook</strong></div>
+              <div class="p-item"><span>✓</span> <strong>100% Local Browser Privacy & Meta-Safe Pacing</strong></div>
+              <div class="p-item"><span>✓</span> <strong>Free Lifetime Updates & Support</strong></div>
+            </div>
+
+            <div class="pricing-action-box">
+              <a href="https://wa.me/918590658979?text=Hey%20Kiran%2C%20I%20want%20to%20get%20Lifetime%20Access%20to%20PingLater%20for%20my%20WhatsApp.%20How%20do%20I%20pay%20and%20get%20started%3F" 
+                 target="_blank" 
+                 rel="noopener noreferrer" 
+                 class="btn-pricing-cta" 
+                 id="pricing-cta-btn">
+                <span>Claim Your Lifetime Pass via WhatsApp →</span>
+              </a>
+              <p class="pricing-subtext">Clicking connects directly to founder Kiran Kumar (+91 8590658979) for instant payment via UPI, Card, or Stripe, with immediate setup delivery.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 9: OBJECTION-CRUSHING FAQ ACCORDION
+         ======================================================== -->
+    <section class="faq-section" id="faq">
+      <div class="section-container">
+        <div class="section-header-center">
+          <span class="section-tag-subtle">Got Questions?</span>
+          <h2 class="section-title">Frequently Asked Questions</h2>
+          <p class="section-lead">Everything you need to know about safety, privacy, and setup.</p>
+        </div>
+
+        <div class="faq-accordion-wrapper">
+          <!-- FAQ 1 -->
+          <div class="faq-item">
+            <button type="button" class="faq-question">
+              <span>Will my WhatsApp number get banned?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>
+                <strong>No. Zero ban risk.</strong> Unlike spam broadcast tools that blast unsolicited messages using unofficial socket APIs, PingLater strictly operates as a passive visual HUD overlay on your existing WhatsApp Web tab. Every follow-up action remains human-in-the-loop, and PingLater uses randomized natural pacing. It never makes automated unauthorized server requests.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 2 -->
+          <div class="faq-item">
+            <button type="button" class="faq-question">
+              <span>Are my client chats, numbers, and messages private?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>
+                <strong>100% private and local-first.</strong> PingLater stores all templates, snippets, and snooze timestamps in your browser's local <code>chrome.storage.local</code>. Your customer data, phone numbers, and chat logs are never sent to any external server or third-party database.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 3 -->
+          <div class="faq-item">
+            <button type="button" class="faq-question">
+              <span>How do I install PingLater?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>
+                Installation takes less than 30 seconds. You receive the extension package, open <code>chrome://extensions</code> in Chrome or Brave, turn on Developer Mode, click <em>"Load unpacked"</em>, and select the folder. Open WhatsApp Web and PingLater will appear docked automatically.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 4 -->
+          <div class="faq-item">
+            <button type="button" class="faq-question">
+              <span>How does payment and onboarding work?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>
+                When you click <em>"Get Access"</em>, it opens a direct WhatsApp chat with Kiran Kumar (+91 8590658979). You can pay via UPI (GPay/PhonePe/Paytm) in India (₹1,499) or via Stripe/Credit Card internationally ($39). You will receive your download bundle, setup video, and activation key within 5 minutes.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 5 -->
+          <div class="faq-item">
+            <button type="button" class="faq-question">
+              <span>How does the "Auto Stop-on-Reply" work?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>
+                PingLater actively watches for incoming message bubbles and unread count badges. The moment a contact replies—even if it's 30 seconds after you sent your message—PingLater automatically marks the snooze as <em>"Replied"</em>, stops the countdown timer, and pauses any scheduled cadences so you never send an awkward follow-up to someone who already answered.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         FOLD 10: THE CHOICE & FINAL CLOSE
+         ======================================================== -->
+    <section class="decision-section">
+      <div class="section-container">
+        <div class="decision-header-center">
+          <span class="section-tag-subtle">The Decision</span>
+          <h2 class="section-title">Two Ways to Handle Your WhatsApp Leads from Here.</h2>
+        </div>
+
+        <div class="decision-grid">
+          <!-- Option 1: Inaction -->
+          <div class="decision-card card-old-way" data-tilt>
+            <div class="decision-tag">Option 01 • The Old Way</div>
+            <h3 class="decision-title">✕ Keep Guessing Who Owes You a Reply</h3>
+            <ul class="decision-list">
+              <li><span>✕</span> Send quotes and hope the prospect remembers to write back</li>
+              <li><span>✕</span> Watch warm leads get buried under 50 random group chats</li>
+              <li><span>✕</span> Spend 30 minutes manually scanning down your chat history</li>
+              <li><span>✕</span> Lose high-ticket deals to competitors who followed up faster</li>
+            </ul>
+          </div>
+
+          <!-- Option 2: Action -->
+          <div class="decision-card card-action-way" data-tilt>
+            <div class="decision-tag">Option 02 • The PingLater Way</div>
+            <h3 class="decision-title">✓ Turn WhatsApp Into a High-Converting Sales Engine</h3>
+            <ul class="decision-list">
+              <li><span>✓</span> Live countdown progress bars show every pending deal at a glance</li>
+              <li><span>✓</span> 1-second slash snippets (<code>/pricing</code>, <code>/cal</code>) close leads instantly</li>
+              <li><span>✓</span> Multi-step follow-up cadences that auto-halt the moment a prospect replies</li>
+              <li><span>✓</span> 100% anti-ban safety with zero recurring monthly subscription fees</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Final Conversion Box -->
+        <div class="final-cta-box" data-tilt>
+          <h3 class="final-cta-heading">Never Let Another Client Ghost You on WhatsApp.</h3>
+          <p class="final-cta-subhead">Join 28+ founders and closers who turned WhatsApp Web into their highest-converting sales channel.</p>
+          <a href="https://wa.me/918590658979?text=Hey%20Kiran%2C%20I%20want%20to%20get%20Lifetime%20Access%20to%20PingLater%20for%20my%20WhatsApp.%20How%20do%20I%20pay%20and%20get%20started%3F" 
+             target="_blank" 
+             rel="noopener noreferrer" 
+             class="btn-final-primary">
+            <span>Get Instant Access via WhatsApp (+91 8590658979) →</span>
+          </a>
+          <span class="final-guarantee">🔒 100% Anti-Ban Guarantee • One-Time Payment • Instant Setup</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ========================================================
+       FOUNDER FOOTER
+       ======================================================== -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="brand-group">
+            <img src="assets/icons/icon48.png" alt="PingLater Logo" class="brand-logo" width="32" height="32">
+            <span class="brand-name">PingLater</span>
+          </div>
+          <p class="footer-bio">
+            Crafted by <strong>Kiran Kumar</strong> • Ex-Software Engineer at Oracle.<br>
+            Built with craft from Bengaluru, Bharat 🇮🇳
+          </p>
+          <div class="footer-challenge-badge">
+            <span class="badge-dot"></span>
+            <span>Day 002 of #365Days365Products Challenge</span>
+          </div>
+        </div>
+
+        <div class="footer-links-group">
+          <span class="footer-col-title">Navigation</span>
+          <a href="#demo">How It Works</a>
+          <a href="#problem">The Problem</a>
+          <a href="#features">Features</a>
+          <a href="#comparison">Why PingLater</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#faq">FAQ</a>
+        </div>
+
+        <div class="footer-links-group">
+          <span class="footer-col-title">Connect with Founder</span>
+          <a href="https://twitter.com/1997harkirat" target="_blank" rel="noopener noreferrer">Twitter / X</a>
+          <a href="https://wa.me/918590658979" target="_blank" rel="noopener noreferrer">WhatsApp (+91 8590658979)</a>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>© 2026 PingLater. All rights reserved. Not affiliated with WhatsApp or Meta Inc.</p>
+        <p class="footer-subtext">100% Local-First & Anti-Ban Architecture.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
