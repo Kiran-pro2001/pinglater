@@ -1953,7 +1953,7 @@ function setupSnoozeTab() {
     const name = document.getElementById('snoozeContactName').value.trim();
     const rawPhone = document.getElementById('snoozePhone').value.trim();
     const note = document.getElementById('snoozeNote').value.trim();
-    const hours = parseInt(document.getElementById('snoozeHours').value, 10) || 48;
+    const hours = parseFloat(document.getElementById('snoozeHours').value) || 48;
 
     if (!name && !rawPhone) {
       alert('Please enter at least a contact name or phone number.');

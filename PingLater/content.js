@@ -562,21 +562,45 @@
           </button>
           <div class="pinglater-snooze-dropdown" id="pinglater-dropdown-snooze" style="display:none;">
             <div class="pinglater-snooze-dropdown-header">Remind me if no reply:</div>
-            <div class="pinglater-snooze-dropdown-item" data-hours="24">
-              <span>⚡ In 24 hours</span>
+            <div class="pinglater-snooze-dropdown-item" data-mins="60" data-label="1 hour">
+              <span>⚡ In 1 hour</span>
+              <span style="font-size:11px; opacity:0.6;">1h</span>
+            </div>
+            <div class="pinglater-snooze-dropdown-item" data-mins="150" data-label="2h 30m">
+              <span>⏳ In 2 hours 30 mins</span>
+              <span class="recommended">Popular</span>
+            </div>
+            <div class="pinglater-snooze-dropdown-item" data-mins="1440" data-label="24 hours">
+              <span>🎯 In 24 hours</span>
               <span style="font-size:11px; opacity:0.6;">Tomorrow</span>
             </div>
-            <div class="pinglater-snooze-dropdown-item" data-hours="48">
-              <span>🎯 In 48 hours</span>
-              <span class="recommended">Recommended</span>
+            <div class="pinglater-snooze-dropdown-item" data-mins="2880" data-label="48 hours">
+              <span>📅 In 48 hours</span>
+              <span style="font-size:11px; opacity:0.6;">2 days</span>
             </div>
-            <div class="pinglater-snooze-dropdown-item" data-hours="72">
-              <span>📅 In 3 days</span>
-              <span style="font-size:11px; opacity:0.6;">72h</span>
-            </div>
-            <div class="pinglater-snooze-dropdown-item" data-hours="168">
+            <div class="pinglater-snooze-dropdown-item" data-mins="10080" data-label="1 week">
               <span>🗓️ In 1 week</span>
               <span style="font-size:11px; opacity:0.6;">7 days</span>
+            </div>
+            <div class="pinglater-snooze-custom-panel">
+              <div class="pinglater-snooze-custom-title">⏱️ Or Custom Duration:</div>
+              <div class="pinglater-snooze-custom-inputs">
+                <div class="pinglater-custom-input-group">
+                  <input type="number" id="pinglaterCustomHours" min="0" max="720" value="1" class="pinglater-custom-num">
+                  <label>h</label>
+                </div>
+                <div class="pinglater-custom-input-group">
+                  <input type="number" id="pinglaterCustomMins" min="0" max="59" step="5" value="30" class="pinglater-custom-num">
+                  <label>m</label>
+                </div>
+                <button type="button" id="btnPinglaterApplyCustomSnooze" class="pinglater-btn-apply-custom">Set ⏱️</button>
+              </div>
+              <div class="pinglater-custom-chips">
+                <button type="button" class="pinglater-chip" data-h="0" data-m="30">30m</button>
+                <button type="button" class="pinglater-chip" data-h="1" data-m="0">1h</button>
+                <button type="button" class="pinglater-chip" data-h="2" data-m="30">2h 30m</button>
+                <button type="button" class="pinglater-chip" data-h="4" data-m="0">4h</button>
+              </div>
             </div>
           </div>
         </div>
@@ -584,6 +608,9 @@
 
       const trigger = container.querySelector('#pinglater-btn-trigger-snooze');
       const dropdown = container.querySelector('#pinglater-dropdown-snooze');
+      const customHoursInput = container.querySelector('#pinglaterCustomHours');
+      const customMinsInput = container.querySelector('#pinglaterCustomMins');
+      const applyCustomBtn = container.querySelector('#btnPinglaterApplyCustomSnooze');
 
       trigger?.addEventListener('click', (e) => {
         e.preventDefault();
@@ -591,25 +618,66 @@
         dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
       });
 
+      // Quick preset dropdown options
       container.querySelectorAll('.pinglater-snooze-dropdown-item').forEach((item) => {
         item.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const hours = parseInt(item.dataset.hours, 10) || 48;
+          const mins = parseInt(item.dataset.mins, 10) || 1440;
+          const label = item.dataset.label || `${mins}m`;
           dropdown.style.display = 'none';
           container.dataset.currentState = '';
-          createSnooze(hours);
+          createSnoozeByMinutes(mins, label);
+        });
+      });
+
+      // Custom duration Set button
+      applyCustomBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const h = parseInt(customHoursInput?.value, 10) || 0;
+        const m = parseInt(customMinsInput?.value, 10) || 0;
+        const totalMinutes = h * 60 + m;
+        if (totalMinutes <= 0) {
+          showPingLaterToast('⚠️', 'Please enter at least 1 minute duration.');
+          return;
+        }
+        const label = h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+        dropdown.style.display = 'none';
+        container.dataset.currentState = '';
+        createSnoozeByMinutes(totalMinutes, label);
+      });
+
+      // Quick Chips (30m, 1h, 2h 30m, 4h)
+      container.querySelectorAll('.pinglater-chip').forEach((chip) => {
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const h = parseInt(chip.dataset.h, 10) || 0;
+          const m = parseInt(chip.dataset.m, 10) || 0;
+          if (customHoursInput) customHoursInput.value = h;
+          if (customMinsInput) customMinsInput.value = m;
+          const totalMinutes = h * 60 + m;
+          const label = chip.textContent.trim();
+          dropdown.style.display = 'none';
+          container.dataset.currentState = '';
+          createSnoozeByMinutes(totalMinutes, label);
         });
       });
     }
   }
 
   function createSnooze(hours) {
+    createSnoozeByMinutes(Math.round(hours * 60), `${hours}h`);
+  }
+
+  function createSnoozeByMinutes(totalMinutes, label) {
     const info = getCurrentChatInfo();
     if (!info) return;
 
     const now = new Date();
-    const dueAt = new Date(now.getTime() + hours * 3600000).toISOString();
+    const dueAt = new Date(now.getTime() + totalMinutes * 60000).toISOString();
+    const durationHours = totalMinutes / 60;
     const contactDisplayName = info.title || (info.phone ? `+${info.phone}` : 'Contact');
 
     const newSnooze = {
@@ -619,7 +687,8 @@
       cleanIdentifier: info.cleanIdentifier,
       snoozedAt: now.toISOString(),
       dueAt: dueAt,
-      durationHours: hours,
+      durationHours: durationHours,
+      durationMinutes: totalMinutes,
       status: 'awaiting',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
@@ -629,7 +698,7 @@
       const list = res.pinglater_snoozed_chats || [];
       list.unshift(newSnooze);
       chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
-        // Notify background to schedule alarm
+        // Schedule background alarm
         chrome.runtime.sendMessage({
           type: 'SCHEDULE_SNOOZE_ALARM',
           snoozeId: newSnooze.id,
@@ -638,8 +707,10 @@
           phone: newSnooze.phone
         });
 
-        showPingLaterToast('💤', `Snoozed for ${hours}h! If ${contactDisplayName} replies, PingLater will auto-dismiss.`);
+        const displayLabel = label || (totalMinutes >= 60 ? `${durationHours.toFixed(1).replace('.0', '')}h` : `${totalMinutes}m`);
+        showPingLaterToast('💤', `Snoozed for ${displayLabel}! If ${contactDisplayName} replies, PingLater will auto-dismiss.`);
         updateSnoozePill();
+        updateLeftChatListBadges();
       });
     });
   }
@@ -862,13 +933,14 @@
 
     if (saveSnippetModal && document.body.contains(saveSnippetModal)) {
       saveSnippetModal.remove();
+      saveSnippetModal = null;
     }
 
     const overlay = document.createElement('div');
     overlay.id = 'pinglater-save-snippet-overlay';
 
     // Suggest a shortcode from first word
-    const firstWord = text.trim().split(/\s+/)[0].slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const firstWord = text.trim().split(/\s+/)[0].slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '') || 'gf';
 
     overlay.innerHTML = `
       <div class="pinglater-modal-card">
@@ -903,42 +975,129 @@
     document.body.appendChild(overlay);
     saveSnippetModal = overlay;
 
-    overlay.querySelector('#btnPinglaterCloseModal')?.addEventListener('click', () => overlay.remove());
-    overlay.querySelector('#btnPinglaterCancelSnippet')?.addEventListener('click', () => overlay.remove());
+    const closeBtn = overlay.querySelector('#btnPinglaterCloseModal');
+    const cancelBtn = overlay.querySelector('#btnPinglaterCancelSnippet');
+    const saveBtn = overlay.querySelector('#btnPinglaterConfirmSnippet');
+    const shortcutInput = overlay.querySelector('#pinglaterShortcutInput');
+    const titleInput = overlay.querySelector('#pinglaterTitleInput');
+    const snippetTextInput = overlay.querySelector('#pinglaterSnippetText');
 
-    overlay.querySelector('#btnPinglaterConfirmSnippet')?.addEventListener('click', () => {
-      const body = overlay.querySelector('#pinglaterSnippetText').value.trim();
-      let shortcut = overlay.querySelector('#pinglaterShortcutInput').value.trim().replace(/^\/+/, '').toLowerCase();
-      const title = overlay.querySelector('#pinglaterTitleInput').value.trim() || 'Quick Snippet';
+    function closeModal() {
+      overlay.remove();
+      saveSnippetModal = null;
+    }
+
+    closeBtn?.addEventListener('click', closeModal);
+    cancelBtn?.addEventListener('click', closeModal);
+
+    function executeSaveSnippet() {
+      const body = (snippetTextInput ? snippetTextInput.value : '').trim();
+      let shortcut = (shortcutInput ? shortcutInput.value : '').trim().replace(/^\/+/, '').toLowerCase();
+      const title = (titleInput ? titleInput.value : '').trim() || (shortcut ? `/${shortcut}` : 'Quick Snippet');
 
       if (!body) {
-        alert('Please enter snippet text.');
+        showPingLaterToast('⚠️', 'Please enter some text for your snippet.');
         return;
       }
       if (!shortcut) {
         shortcut = 'snippet';
       }
 
-      chrome.storage.local.get(['pinglater_templates'], (res) => {
-        const list = res.pinglater_templates || [];
-        const newTpl = {
-          id: `tpl_quick_${Date.now()}`,
-          title: title,
-          category: 'Quick Snippets',
-          shortcut: shortcut,
-          body: body,
-          variables: body.includes('{{name}}') ? ['name'] : [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        list.push(newTpl);
-        chrome.storage.local.set({ pinglater_templates: list }, () => {
-          templates = list;
-          overlay.remove();
-          showPingLaterToast('⚡', `Saved snippet! Type /${shortcut} in any chat to insert.`);
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '⏳ Saving...';
+      }
+
+      const newTpl = {
+        id: `tpl_quick_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        title: title,
+        category: 'Quick Snippets',
+        shortcut: shortcut,
+        body: body,
+        variables: body.includes('{{name}}') ? ['name'] : [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // 1. Immediately update in-memory templates so /shortcut works right away in this active chat
+      const existingIdx = templates.findIndex((t) => (t.shortcut || '').toLowerCase() === shortcut);
+      if (existingIdx >= 0) {
+        templates[existingIdx] = newTpl;
+      } else {
+        templates.push(newTpl);
+      }
+
+      // 2. Persist to chrome.storage.local
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['pinglater_templates'], (res) => {
+          let list = res.pinglater_templates || [];
+          const idx = list.findIndex((t) => (t.shortcut || '').toLowerCase() === shortcut);
+          if (idx >= 0) {
+            list[idx] = newTpl;
+          } else {
+            list.push(newTpl);
+          }
+          chrome.storage.local.set({ pinglater_templates: list }, () => {
+            console.log('[PingLater] Snippet saved successfully to storage:', newTpl);
+          });
         });
-      });
+      }
+
+      // 3. Notify background worker for storage sync
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'SAVE_TEMPLATE', template: newTpl });
+        }
+      } catch (e) {
+        console.warn('[PingLater] runtime message failed:', e);
+      }
+
+      // 4. Remove modal and clear selection
+      closeModal();
+      hideSelectionSnippetBtn();
+      try {
+        window.getSelection()?.removeAllRanges();
+      } catch (e) {}
+
+      // 5. Visual confirmation toast
+      showPingLaterToast('⚡', `Saved snippet! Type /${shortcut} in any chat to insert.`);
+    }
+
+    saveBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      executeSaveSnippet();
     });
+
+    shortcutInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        executeSaveSnippet();
+      }
+    });
+
+    titleInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        executeSaveSnippet();
+      }
+    });
+
+    snippetTextInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        executeSaveSnippet();
+      }
+    });
+
+    // Auto-focus and select shortcut input
+    setTimeout(() => {
+      shortcutInput?.focus();
+      shortcutInput?.select();
+    }, 100);
   }
 
   // Text selection listener on WhatsApp Web

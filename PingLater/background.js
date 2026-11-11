@@ -370,6 +370,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
+    case 'SAVE_TEMPLATE': {
+      if (message.template) {
+        StorageService.saveTemplate(message.template)
+          .then((saved) => {
+            sendResponse({ success: true, template: saved });
+          })
+          .catch((err) => {
+            console.warn('[PingLater] Error saving template in background:', err);
+            sendResponse({ success: false, error: err.message });
+          });
+        return true; // async sendResponse
+      }
+      break;
+    }
+
     case 'OPEN_WHATSAPP_CHAT': {
       const { phone } = message;
       if (phone) {
