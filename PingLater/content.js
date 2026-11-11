@@ -361,17 +361,51 @@
 
   function getCurrentChatInfo() {
     try {
-      const header = document.querySelector('#main header') || document.querySelector('header');
-      if (!header) return null;
+      const mainChat = document.querySelector('#main');
+      if (!mainChat) return null;
 
-      const titleEl =
-        header.querySelector('span[data-testid="conversation-info-header-chat-title"]') ||
-        header.querySelector('div[role="button"] span[title]') ||
-        header.querySelector('span[dir="auto"]');
+      let rawTitle = '';
 
-      if (!titleEl) return null;
+      // Check header inside #main
+      const header = mainChat.querySelector('header') || mainChat.querySelector('[data-testid="conversation-header"]') || mainChat.firstElementChild;
+      if (header) {
+        // Try elements with title attributes first
+        const titleWithAttr = header.querySelector('[title]:not([role="button"]):not(button)');
+        if (titleWithAttr && titleWithAttr.getAttribute('title')) {
+          rawTitle = titleWithAttr.getAttribute('title').trim();
+        }
 
-      const rawTitle = (titleEl.getAttribute('title') || titleEl.innerText || '').trim();
+        if (!rawTitle) {
+          const candidate =
+            header.querySelector('span[data-testid="conversation-info-header-chat-title"]') ||
+            header.querySelector('div[role="button"] span[title]') ||
+            header.querySelector('div[role="button"] span[dir="auto"]') ||
+            header.querySelector('h2') ||
+            header.querySelector('span[dir="auto"]');
+          if (candidate) {
+            rawTitle = (candidate.getAttribute('title') || candidate.textContent || '').trim();
+          }
+        }
+      }
+
+      // Check active item in left conversation list
+      if (!rawTitle) {
+        const activeLeftItem =
+          document.querySelector('#pane-side div[aria-selected="true"]') ||
+          document.querySelector('#pane-side div[tabindex="0"]');
+        if (activeLeftItem) {
+          const nameSpan = activeLeftItem.querySelector('span[title]') || activeLeftItem.querySelector('span[dir="auto"]');
+          if (nameSpan) {
+            rawTitle = (nameSpan.getAttribute('title') || nameSpan.textContent || '').trim();
+          }
+        }
+      }
+
+      // Fallback: never let rawTitle be empty when active chat is open
+      if (!rawTitle) {
+        rawTitle = 'Contact';
+      }
+
       const phoneDigits = rawTitle.replace(/\D/g, '');
       const isPhoneTitle = phoneDigits.length >= 7 && /^[\d\s+\-()]+$/.test(rawTitle);
 
@@ -382,7 +416,12 @@
         cleanIdentifier: isPhoneTitle ? phoneDigits : rawTitle.toLowerCase()
       };
     } catch (e) {
-      return null;
+      return {
+        title: 'Contact',
+        contactName: 'Contact',
+        phone: '',
+        cleanIdentifier: 'active_chat'
+      };
     }
   }
 
@@ -435,13 +474,24 @@
     }
 
     const info = getCurrentChatInfo();
-    if (!info) {
-      if (snoozeContainer) snoozeContainer.style.display = 'none';
-      return;
-    }
-
     const container = getOrCreateSnoozeContainer();
     container.style.display = 'block';
+
+    // Calculate dynamic position inside the active chat's header bar
+    const header = mainChat.querySelector('header') || mainChat.firstElementChild;
+    if (header) {
+      const headerRect = header.getBoundingClientRect();
+      container.style.position = 'fixed';
+      container.style.top = `${Math.max(8, headerRect.top + 10)}px`;
+      container.style.right = `${Math.max(16, window.innerWidth - headerRect.right + 120)}px`;
+      container.style.zIndex = '2147483647';
+    } else {
+      const mainRect = mainChat.getBoundingClientRect();
+      container.style.position = 'fixed';
+      container.style.top = `${Math.max(8, mainRect.top + 10)}px`;
+      container.style.right = `${Math.max(16, window.innerWidth - mainRect.right + 24)}px`;
+      container.style.zIndex = '2147483647';
+    }
 
     const activeSnooze = getActiveSnoozeForCurrentChat();
 
@@ -651,7 +701,19 @@
     if (!activeChatObserver && document.querySelector('#main')) {
       initReplyObserver();
     }
-  }, 2000);
+  }, 1500);
+
+  // Immediate snap when switching chats or resizing window
+  document.addEventListener('click', () => {
+    setTimeout(updateSnoozePill, 100);
+    setTimeout(updateSnoozePill, 400);
+    setTimeout(updateSnoozePill, 900);
+  });
+
+  window.addEventListener('resize', updateSnoozePill);
+
+  // Initial call on load
+  setTimeout(updateSnoozePill, 500);
 
   console.log('[PingLater] In-Chat Quick Snippets & Smart Snooze loaded on WhatsApp Web.');
 })();

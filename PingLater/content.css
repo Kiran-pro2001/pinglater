@@ -158,9 +158,9 @@
 
 #pinglater-snooze-container {
   position: fixed;
-  top: 68px;
-  right: 28px;
-  z-index: 99999;
+  top: 14px;
+  right: 120px;
+  z-index: 2147483647 !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   user-select: none;
   animation: pinglaterFadeIn 0.2s ease-out;
