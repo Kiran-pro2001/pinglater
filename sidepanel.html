@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PingLater Workspace</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="panel-container">
+    <!-- Top Header Card with 3D elevation and Green Accent line -->
+    <header class="panel-header-card">
+      <div class="panel-header-accent-line"></div>
+      <div class="panel-header-content">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">PingLater</h1>
+            <span class="brand-subtitle">WhatsApp Follow-up Workspace</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button type="button" id="btnOpenDashboard" class="icon-btn" title="Open Full Dashboard">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Empty State / Batch Selector when no active batch is running -->
+    <section id="emptyStateSection" class="view-section hidden">
+      <div class="empty-card">
+        <div class="empty-icon-wrapper">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#25D366" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </div>
+        <h2>No Active Batch Running</h2>
+        <p>Select a scheduled batch below to start sending, or create a new batch in your dashboard.</p>
+        
+        <div id="availableBatchesList" class="batches-quick-list">
+          <!-- Dynamically populated -->
+        </div>
+
+        <button id="btnCreateNewBatchEmpty" class="btn btn-primary full-width">
+          + Create New Batch in Dashboard
+        </button>
+      </div>
+    </section>
+
+    <!-- Active Workspace View -->
+    <main id="activeWorkspaceSection" class="view-section">
+      <!-- Batch Summary Banner -->
+      <div class="batch-banner">
+        <div class="batch-meta">
+          <div class="batch-title-row">
+            <h2 id="batchTitle" class="batch-title">Batch Name</h2>
+          </div>
+          <!-- Line 2: Status & End Job on dedicated line for clean UI -->
+          <div class="batch-status-actions-row">
+            <span id="batchStatusBadge" class="status-badge">In Progress</span>
+            <button type="button" id="btnHeaderEndJob" class="btn-header-end" title="End and complete this batch now">⏹️ End the Job</button>
+          </div>
+          <div class="batch-counts">
+            <span id="statSent"><strong>0</strong> Sent</span>
+            <span class="dot">•</span>
+            <span id="statSkipped"><strong>0</strong> Skipped</span>
+            <span class="dot">•</span>
+            <span id="statRemaining"><strong>0</strong> Pending</span>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-container">
+          <div class="progress-bar-bg">
+            <div id="progressBarFill" class="progress-bar-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-text">
+            <span id="progressPercent">0%</span>
+            <span id="progressFraction">0 / 0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pacing Countdown Overlay (Visible during anti-ban delay) -->
+      <div id="pacingOverlay" class="pacing-overlay hidden">
+        <div class="pacing-card">
+          <div class="pacing-pulse-ring">
+            <span id="pacingSecondsText" class="pacing-seconds">10</span>
+          </div>
+          <div class="pacing-content">
+            <h3>Safe Pacing Pause</h3>
+            <p>Spacing out messages with safe delay to protect your WhatsApp account from being blocked.</p>
+            <button id="btnSkipPacing" class="btn btn-secondary btn-sm">
+              ⚡ Skip Delay & Next
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scheduled Waiting Card (Shown when task is scheduled for future) -->
+      <div id="scheduledWaitingCard" class="card-status-view hidden">
+        <div class="status-view-icon">⏰</div>
+        <h2>Follow-up Scheduled</h2>
+        <div class="scheduled-meta-box">
+          <span id="scheduledWaitingTargetTime" class="scheduled-time-text">Scheduled for Nov 11, 10:00 AM</span>
+          <span id="scheduledWaitingCountdown" class="countdown-badge">Starts in 10 mins</span>
+        </div>
+        <div class="scheduled-details-preview">
+          <strong id="scheduledPreviewName">Robin Sharma</strong>
+          <span id="scheduledPreviewPhone">+91 91234 56789</span>
+          <div class="whatsapp-bubble-preview mt-2">
+            <p id="scheduledPreviewMessage">Message preview here...</p>
+          </div>
+        </div>
+        <button id="btnStartScheduledNow" class="btn btn-success full-width mt-3">
+          🚀 Send Now (Bypass Schedule)
+        </button>
+        <button id="btnCancelScheduledJob" class="btn btn-outline-danger full-width mt-2">
+          ⏹️ Cancel & End Job
+        </button>
+        <button id="btnOpenDashboardFromScheduled" class="btn btn-outline full-width mt-2">
+          Open in Dashboard
+        </button>
+      </div>
+
+      <!-- Paused State Card (Shown when user clicks Pause Batch) -->
+      <div id="pausedCard" class="card-status-view hidden">
+        <div class="status-view-icon">⏸️</div>
+        <h2>Batch is Paused</h2>
+        <p id="pausedProgressText">Progress saved: 12 of 50 processed.</p>
+        <p class="status-subtext">Take your time. WhatsApp Web will not be updated while paused.</p>
+        <button id="btnResumeBatch" class="btn btn-primary full-width mt-3">
+          ▶ Resume Batch & Send Next
+        </button>
+        <button id="btnEndBatchFromPaused" class="btn btn-outline-danger full-width mt-2">
+          ⏹️ End the Job & Complete
+        </button>
+        <button id="btnOpenDashboardFromPaused" class="btn btn-outline full-width mt-2">
+          Back to Dashboard
+        </button>
+      </div>
+
+      <!-- Recipient Card -->
+      <div id="recipientCard" class="recipient-card">
+        <div class="recipient-header">
+          <div class="recipient-badge-row">
+            <span id="recipientIndexBadge" class="index-pill">Recipient #1</span>
+            <span id="recipientStatusPill" class="recipient-status-pill status-pending">Pending</span>
+          </div>
+          <h3 id="recipientName" class="recipient-name">Recipient Name</h3>
+          <div class="recipient-phone-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+            </svg>
+            <span id="recipientPhone" class="recipient-phone">+91 00000 00000</span>
+          </div>
+          <!-- Custom Tags / Metadata Badges (Max 5 + Expand Toggle) -->
+          <div id="recipientMetaContainer" class="recipient-meta-box">
+            <div id="recipientTagsList" class="tags-row"></div>
+            <button type="button" id="btnToggleTags" class="tag-toggle-btn hidden">+ more fields ▾</button>
+          </div>
+        </div>
+
+        <!-- Rendered WhatsApp Message Preview -->
+        <div class="message-preview-container">
+          <div class="preview-header">
+            <span class="preview-label">Prefilled Message</span>
+            <div class="preview-header-actions" style="display:flex; gap:6px;">
+              <button type="button" id="btnEditRecipientMessage" class="copy-btn" title="Edit message before sending">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                <span id="editBtnLabel">Edit</span>
+              </button>
+              <button type="button" id="btnCopyMessage" class="copy-btn" title="Copy to clipboard">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span id="copyBtnLabel">Copy</span>
+              </button>
+            </div>
+          </div>
+          <!-- Normal Bubble View -->
+          <div id="bubbleViewContainer" class="whatsapp-bubble">
+            <p id="messageBodyPreview">Message preview loading...</p>
+            <span class="bubble-tail"></span>
+          </div>
+          <!-- Inline Edit View (Initially Hidden) -->
+          <div id="inlineEditContainer" class="inline-edit-box hidden" style="margin-top: 8px;">
+            <textarea id="inlineMessageTextarea" class="form-textarea" rows="4" style="width: 100%; border: 1.5px solid #25D366; border-radius: 8px; padding: 10px; font-size: 13.5px;"></textarea>
+            <div class="inline-edit-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+              <button type="button" id="btnCancelInlineEdit" class="btn btn-outline btn-sm">Cancel</button>
+              <button type="button" id="btnSaveInlineEdit" class="btn btn-primary btn-sm">💾 Save & Update WhatsApp</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Controls -->
+        <div class="action-dock">
+          <div class="primary-actions-row">
+            <button type="button" id="btnMarkSent" class="btn btn-success flex-1" title="Shortcut: Press Spacebar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              Mark Sent & Next
+            </button>
+            <button type="button" id="btnSkip" class="btn btn-neutral" title="Skip this contact">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                <line x1="19" y1="5" x2="19" y2="19"></line>
+              </svg>
+              Skip
+            </button>
+          </div>
+
+          <!-- Secondary Helpers (Unobtrusive) -->
+          <div class="secondary-helpers-row" style="text-align: center; margin-top: 4px;">
+            <button type="button" id="btnLoadInWhatsApp" class="btn-helper-link" title="Click if WhatsApp Web disconnected or you want to reload this chat">
+              🔄 Reload in WhatsApp Web
+            </button>
+          </div>
+
+          <div class="keyboard-hint">
+            <span>Tip: Press <strong>Space</strong> to Mark Sent</span>
+          </div>
+
+          <!-- Bottom Navigation / Pause Controls -->
+          <div class="secondary-actions-row">
+            <button type="button" id="btnPrevRecipient" class="btn-text" title="Go to previous contact">
+              ← Previous
+            </button>
+            <button type="button" id="btnPauseBatch" class="btn-text">
+              ⏸️ Pause Batch
+            </button>
+            <button type="button" id="btnEndBatch" class="btn-text text-danger" title="End and finish this batch job">
+              ⏹️ End the Job
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Completion Screen (Shown when all contacts are finished) -->
+      <div id="completionCard" class="completion-card hidden">
+        <div class="confetti-icon">🎉</div>
+        <h2>Batch Completed!</h2>
+        <p id="completionSummaryText">All 50 follow-ups have been processed.</p>
+        
+        <div class="completion-metrics">
+          <div class="metric-item">
+            <span id="metricSentCount" class="metric-value text-success">0</span>
+            <span class="metric-label">Sent</span>
+          </div>
+          <div class="metric-item">
+            <span id="metricSkippedCount" class="metric-value text-muted">0</span>
+            <span class="metric-label">Skipped</span>
+          </div>
+          <div class="metric-item">
+            <span id="metricTotalCount" class="metric-value">0</span>
+            <span class="metric-label">Total</span>
+          </div>
+        </div>
+
+        <button id="btnExportReport" class="btn btn-primary full-width">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Export CSV Report
+        </button>
+
+        <button id="btnBackToDashboardFromComplete" class="btn btn-outline full-width">
+          Back to Dashboard
+        </button>
+      </div>
+    </main>
+
+    <!-- Footer Controls -->
+    <footer class="panel-footer">
+      <div class="pacing-toggle-row">
+        <label class="toggle-label" title="Anti-ban delay between sending contacts">
+          <input type="checkbox" id="togglePacingDelay" checked>
+          <span>Safe Pacing (<span id="labelPacingSeconds">10s</span>)</span>
+        </label>
+        <button id="btnTestSound" class="icon-text-btn" title="Test notification chime sound">
+          🔔 Test Chime
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

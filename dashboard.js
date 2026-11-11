@@ -1,0 +1,1708 @@
+/**
+ * PingLater - Full Dashboard Hub Controller (Module 7)
+ * Manages the central management workspace: Batches, Ingestion Wizard,
+ * 1-to-1 Follow-ups, Templates Manager, and Settings/Backup.
+ */
+
+import { StorageService, BATCH_STATUS, RECIPIENT_STATUS } from './utils/storage.js';
+import { parseCSV, autoDetectColumns, normalizePhoneNumber, parsePastedText, processRecipientsList, COMMON_COUNTRY_CODES } from './utils/normalizer.js';
+import { extractVariables, renderTemplate, validateBatchVariables, renderBatchRecipients } from './utils/template.js';
+import { WhatsAppOrchestrator } from './utils/whatsapp.js';
+import { SoundPlayer } from './utils/audio.js';
+
+// Application State
+let currentTab = 'tab-quick-ping';
+let currentBatches = [];
+let currentTemplates = [];
+let currentSettings = null;
+
+// Wizard State
+let wizardRawRows = [];
+let wizardHeaders = [];
+let wizardProcessedRecipients = [];
+let wizardSampleIndex = 0;
+
+// ==========================================
+// INITIALIZATION
+// ==========================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await StorageService.initDefaults();
+  currentSettings = await StorageService.getSettings();
+
+  setupNavigation();
+  setupBatchesTab();
+  setupWizardTab();
+  setupQuickPingTab();
+  setupTemplatesTab();
+  setupSettingsTab();
+  setupEditScheduleModal();
+  setupSkippedModal();
+  setupGlobalActions();
+
+  // Load initial data
+  await refreshBatchesList();
+  await refreshTemplatesList();
+  populateSettingsForm();
+  updateLiveClock();
+  setInterval(updateLiveClock, 1000);
+
+  // Sync with background and sidepanel events
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === 'BATCH_COMPLETED' || msg.type === 'SCHEDULE_BATCH') {
+        refreshBatchesList();
+      }
+    });
+  }
+});
+
+// ==========================================
+// TAB NAVIGATION
+// ==========================================
+
+function setupNavigation() {
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.getAttribute('data-tab');
+      switchTab(targetTab);
+    });
+  });
+
+  // Action buttons that navigate
+  document.getElementById('btnNewBatchTop')?.addEventListener('click', () => switchTab('tab-wizard'));
+  document.getElementById('btnQuickFollowupTop')?.addEventListener('click', () => switchTab('tab-quick-ping'));
+  document.getElementById('btnEmptyCreateBatch')?.addEventListener('click', () => switchTab('tab-wizard'));
+  document.getElementById('btnReviewOverdue')?.addEventListener('click', () => {
+    switchTab('tab-batches');
+    const activePill = document.querySelector('.pill[data-filter="active"]');
+    if (activePill) activePill.click();
+  });
+}
+
+function switchTab(tabId) {
+  currentTab = tabId;
+
+  document.querySelectorAll('.nav-item').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+  });
+
+  document.querySelectorAll('.tab-pane').forEach((pane) => {
+    pane.classList.toggle('active', pane.id === tabId);
+  });
+
+  if (tabId === 'tab-batches') refreshBatchesList();
+  if (tabId === 'tab-templates') refreshTemplatesList();
+  if (tabId === 'tab-wizard') checkWizardActiveBatch();
+}
+
+function updateLiveClock() {
+  const clockEls = document.querySelectorAll('.live-clock-span');
+  const now = new Date();
+  const text = `🕒 ${now.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  clockEls.forEach((el) => (el.textContent = text));
+
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const wizardClock = document.getElementById('wizardCurrentClock');
+  if (wizardClock) wizardClock.textContent = `🕒 Current: ${timeStr}`;
+
+  const singleClock = document.getElementById('singleCurrentClock');
+  if (singleClock) singleClock.textContent = `🕒 Current: ${timeStr}`;
+
+  // Keep relative countdown displays updated
+  if (typeof updateTimingDisplayFromInput === 'function') {
+    updateTimingDisplayFromInput();
+  }
+  if (typeof updateWizardTimingDisplay === 'function') {
+    updateWizardTimingDisplay();
+  }
+}
+
+// ==========================================
+// TAB 1: BATCHES & FOLLOW-UPS
+// ==========================================
+
+let batchFilter = 'all';
+let batchSearchQuery = '';
+
+function setupBatchesTab() {
+  const filterPills = document.querySelectorAll('.filter-pills .pill');
+  filterPills.forEach((p) => {
+    p.addEventListener('click', () => {
+      filterPills.forEach((x) => x.classList.remove('active'));
+      p.classList.add('active');
+      batchFilter = p.getAttribute('data-filter') || 'all';
+      renderBatchesGrid();
+    });
+  });
+
+  const searchInput = document.getElementById('batchSearchInput');
+  searchInput?.addEventListener('input', (e) => {
+    batchSearchQuery = e.target.value.toLowerCase().trim();
+    renderBatchesGrid();
+  });
+}
+
+async function refreshBatchesList() {
+  currentBatches = await StorageService.getBatches();
+  updateBatchesCountBadges();
+  renderBatchesGrid();
+  checkWizardActiveBatch();
+}
+
+function checkWizardActiveBatch() {
+  const notice = document.getElementById('wizardActiveBatchNotice');
+  const titleEl = document.getElementById('wizardActiveBatchTitle');
+  if (!notice || !titleEl) return;
+
+  const inProgress = currentBatches.find((b) => b.status === BATCH_STATUS.IN_PROGRESS);
+  if (inProgress) {
+    const total = inProgress.recipients ? inProgress.recipients.length : 0;
+    const sent = inProgress.recipients ? inProgress.recipients.filter((r) => r.status === 'sent').length : 0;
+    titleEl.textContent = `"${inProgress.title}" (${sent}/${total} sent)`;
+    notice.classList.remove('hidden');
+
+    const btnEnd = document.getElementById('btnWizardEndActiveJob');
+    if (btnEnd) {
+      btnEnd.onclick = async () => {
+        if (!confirm(`Are you sure you want to end active job "${inProgress.title}"? Your progress will be saved and batch marked as completed.`)) return;
+
+        await StorageService.updateBatch(inProgress.id, {
+          status: BATCH_STATUS.COMPLETED,
+          completedAt: new Date().toISOString()
+        });
+
+        // Cancel alarm
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'CANCEL_BATCH_ALARM', batchId: inProgress.id });
+          chrome.runtime.sendMessage({ type: 'BATCH_COMPLETED', batchId: inProgress.id });
+        }
+
+        notice.classList.add('hidden');
+        await refreshBatchesList();
+        alert(`✅ Active job "${inProgress.title}" ended and marked completed!`);
+      };
+    }
+  } else {
+    notice.classList.add('hidden');
+  }
+}
+
+function updateBatchesCountBadges() {
+  const all = currentBatches.length;
+  const active = currentBatches.filter((b) => b.status === BATCH_STATUS.IN_PROGRESS || b.status === BATCH_STATUS.OVERDUE).length;
+  const scheduled = currentBatches.filter((b) => b.status === BATCH_STATUS.SCHEDULED).length;
+  const completed = currentBatches.filter((b) => b.status === BATCH_STATUS.COMPLETED).length;
+
+  document.getElementById('countAll').textContent = all;
+  document.getElementById('countActive').textContent = active;
+  document.getElementById('countScheduled').textContent = scheduled;
+  document.getElementById('countCompleted').textContent = completed;
+
+  // Sidebar badge for active/overdue items
+  const navBadge = document.getElementById('navDueBadge');
+  if (active > 0) {
+    navBadge.textContent = active;
+    navBadge.classList.remove('hidden');
+  } else {
+    navBadge.classList.add('hidden');
+  }
+
+  // Top overdue banner
+  const overdueBatches = currentBatches.filter((b) => b.status === BATCH_STATUS.OVERDUE);
+  const overdueBanner = document.getElementById('topOverdueBanner');
+  if (overdueBatches.length > 0) {
+    overdueBanner.classList.remove('hidden');
+    document.getElementById('overdueBannerTitle').textContent = `${overdueBatches.length} overdue follow-up batch(es) need your attention!`;
+  } else {
+    overdueBanner.classList.add('hidden');
+  }
+}
+
+function renderBatchesGrid() {
+  const container = document.getElementById('batchesContainer');
+  const fallback = document.getElementById('batchesEmptyFallback');
+  container.innerHTML = '';
+
+  let filtered = currentBatches.filter((b) => {
+    if (batchFilter === 'active') return b.status === BATCH_STATUS.IN_PROGRESS || b.status === BATCH_STATUS.OVERDUE;
+    if (batchFilter === 'scheduled') return b.status === BATCH_STATUS.SCHEDULED;
+    if (batchFilter === 'completed') return b.status === BATCH_STATUS.COMPLETED;
+    return true;
+  });
+
+  if (batchSearchQuery) {
+    filtered = filtered.filter((b) => (b.title || '').toLowerCase().includes(batchSearchQuery));
+  }
+
+  if (filtered.length === 0) {
+    fallback.classList.remove('hidden');
+    container.classList.add('hidden');
+    return;
+  }
+
+  fallback.classList.add('hidden');
+  container.classList.remove('hidden');
+
+  filtered.forEach((batch) => {
+    const card = document.createElement('div');
+    card.className = `batch-card ${batch.status === BATCH_STATUS.OVERDUE ? 'card-overdue' : ''}`;
+
+    const total = batch.recipients ? batch.recipients.length : 0;
+    const sent = batch.recipients ? batch.recipients.filter((r) => r.status === RECIPIENT_STATUS.SENT).length : 0;
+    const skipped = batch.recipients ? batch.recipients.filter((r) => r.status === RECIPIENT_STATUS.SKIPPED).length : 0;
+    const processed = sent + skipped;
+    const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+    const scheduledDateStr = batch.scheduledAt
+      ? new Date(batch.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+      : 'Unscheduled';
+
+    card.innerHTML = `
+      <div class="card-top-row">
+        <h3 class="card-title">${escapeHtml(batch.title || 'Untitled Follow-up')}</h3>
+        <span class="badge badge-${batch.status}">${batch.status.replace('_', ' ')}</span>
+      </div>
+
+      <div class="card-meta-row">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span>${scheduledDateStr}</span>
+        <span>•</span>
+        <span>${total} Recipient${total !== 1 ? 's' : ''}</span>
+      </div>
+
+      <div class="batch-progress-bar">
+        <div class="bar-track">
+          <div class="bar-fill" style="width: ${percent}%"></div>
+        </div>
+        <div class="bar-meta">
+          <span>${sent} Sent, ${skipped} Skipped</span>
+          <span>${percent}%</span>
+        </div>
+      </div>
+
+      <div class="card-actions-row">
+        <button type="button" class="btn btn-primary btn-sm btn-start-batch" data-id="${batch.id}">
+          ▶ Open Workspace
+        </button>
+        <div class="card-actions-secondary">
+          ${skipped > 0 ? `
+          <button type="button" class="btn btn-warning btn-sm btn-view-skipped" data-id="${batch.id}" title="View and Export ${skipped} Skipped Contacts">
+            ⚠️ Skipped (${skipped})
+          </button>
+          ` : ''}
+          <button type="button" class="btn btn-outline btn-sm btn-edit-batch" data-id="${batch.id}" title="Edit Schedule & Follow-up">
+            ✏️ Edit
+          </button>
+          <button type="button" class="btn btn-outline btn-sm btn-export-batch" data-id="${batch.id}" title="Export CSV Report">
+            📥 Report
+          </button>
+          <button type="button" class="btn btn-danger btn-sm btn-delete-batch" data-id="${batch.id}" title="Delete Batch">
+            🗑️
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Start / Resume button
+    card.querySelector('.btn-start-batch').addEventListener('click', () => {
+      openBatchInSidePanel(batch.id);
+    });
+
+    // View Skipped Contacts button
+    card.querySelector('.btn-view-skipped')?.addEventListener('click', () => {
+      openSkippedRecipientsModal(batch);
+    });
+
+    // Edit schedule button
+    card.querySelector('.btn-edit-batch')?.addEventListener('click', () => {
+      openEditScheduleModal(batch);
+    });
+
+    // Export button
+    card.querySelector('.btn-export-batch').addEventListener('click', () => {
+      downloadBatchCSV(batch);
+    });
+
+    // Delete button
+    card.querySelector('.btn-delete-batch').addEventListener('click', async () => {
+      if (confirm(`Are you sure you want to delete "${batch.title}"?`)) {
+        await StorageService.deleteBatch(batch.id);
+        chrome.runtime.sendMessage({ type: 'CANCEL_BATCH_ALARM', batchId: batch.id });
+        refreshBatchesList();
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+async function openBatchInSidePanel(batchId) {
+  try {
+    if (chrome.sidePanel && chrome.sidePanel.open) {
+      const win = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: win.id });
+      setTimeout(() => {
+        chrome.runtime.sendMessage({ type: 'LOAD_BATCH_IN_SIDEPANEL', batchId }).catch(() => {});
+      }, 300);
+      return;
+    }
+  } catch (e) {
+    console.warn('[PingLater] Direct sidePanel.open failed:', e);
+  }
+  // Robust fallback window if browser blocks sidePanel.open on extension pages
+  window.open(
+    chrome.runtime.getURL(`sidepanel.html?batchId=${batchId}`),
+    'PingLaterSidePanel',
+    'width=420,height=760,left=' + (window.screen.width - 440) + ',top=80'
+  );
+}
+
+// ==========================================
+// TAB 2: NEW BATCH WIZARD
+// ==========================================
+
+function setupWizardTab() {
+  const dropzone = document.getElementById('dropzoneArea');
+  const fileInput = document.getElementById('csvFileInput');
+  const btnModeCSV = document.getElementById('btnModeCSV');
+  const btnModePaste = document.getElementById('btnModePaste');
+  const pasteArea = document.getElementById('pasteArea');
+  const btnProcessPaste = document.getElementById('btnProcessPaste');
+  const rawPasteText = document.getElementById('rawPasteText');
+
+  // Mode switching (CSV vs Paste)
+  btnModeCSV.addEventListener('click', () => {
+    btnModeCSV.classList.add('active');
+    btnModePaste.classList.remove('active');
+    pasteArea.classList.add('hidden');
+    const fileCard = document.getElementById('uploadedFileCard');
+    if (fileCard && !fileCard.classList.contains('hidden')) {
+      dropzone.classList.add('hidden');
+    } else {
+      dropzone.classList.remove('hidden');
+    }
+  });
+
+  btnModePaste.addEventListener('click', () => {
+    btnModePaste.classList.add('active');
+    btnModeCSV.classList.remove('active');
+    dropzone.classList.add('hidden');
+    document.getElementById('uploadedFileCard')?.classList.add('hidden');
+    pasteArea.classList.remove('hidden');
+  });
+
+  // Top CSV Confirmation Banner OK button
+  document.getElementById('btnAcknowledgeCSV')?.addEventListener('click', () => {
+    document.getElementById('csvSuccessBanner')?.classList.add('hidden');
+    const target = document.getElementById('wizardStep2Card') || document.getElementById('wizardMessageBody') || document.getElementById('mappingCard');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // Replace File button
+  document.getElementById('btnChangeCSVFile')?.addEventListener('click', () => {
+    fileInput.value = '';
+    fileInput.click();
+  });
+
+  // Drag & drop handlers
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+  });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleCSVFile(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleCSVFile(e.target.files[0]);
+    }
+  });
+
+  // Paste handler
+  btnProcessPaste.addEventListener('click', () => {
+    const text = rawPasteText.value.trim();
+    if (!text) {
+      alert('Please paste some contact lines first.');
+      return;
+    }
+    const defaultCC = document.getElementById('selectDefaultCC')?.value || '91';
+    const contacts = parsePastedText(text, defaultCC);
+    if (contacts.length === 0) {
+      alert('Could not find any valid phone numbers in the pasted text.');
+      return;
+    }
+
+    // Convert into row objects
+    const rows = contacts.map((c, i) => ({
+      Name: c.name || `Contact ${i + 1}`,
+      Phone: c.phone
+    }));
+    handleParsedRows(['Name', 'Phone'], rows);
+  });
+
+  // Column remapping change listeners
+  document.getElementById('selectPhoneCol')?.addEventListener('change', reprocessWizardRecipients);
+  document.getElementById('selectNameCol')?.addEventListener('change', reprocessWizardRecipients);
+  document.getElementById('selectDefaultCC')?.addEventListener('change', reprocessWizardRecipients);
+
+  // Message template dropdown
+  const selectTemplateInWizard = document.getElementById('selectTemplateInWizard');
+  selectTemplateInWizard?.addEventListener('change', (e) => {
+    const tplId = e.target.value;
+    if (tplId) {
+      const found = currentTemplates.find((t) => t.id === tplId);
+      if (found) {
+        document.getElementById('wizardMessageBody').value = found.body;
+        updateLivePreview();
+      }
+    }
+  });
+
+  // Message body input listener for live preview & validation
+  const wizardMessageBody = document.getElementById('wizardMessageBody');
+  wizardMessageBody?.addEventListener('input', () => {
+    updateLivePreview();
+  });
+
+  // Sample navigator buttons
+  document.getElementById('btnPrevSample')?.addEventListener('click', () => {
+    if (wizardSampleIndex > 0) {
+      wizardSampleIndex--;
+      updateLivePreview();
+    }
+  });
+
+  document.getElementById('btnNextSample')?.addEventListener('click', () => {
+    if (wizardSampleIndex < wizardProcessedRecipients.length - 1) {
+      wizardSampleIndex++;
+      updateLivePreview();
+    }
+  });
+
+  // Handle Wizard Timing Presets
+  const wizardPresets = document.querySelectorAll('#wizardTimingPresets .btn-timing-preset');
+  wizardPresets.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      wizardPresets.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const presetKey = btn.getAttribute('data-wizard-preset');
+      applyWizardTimingPreset(presetKey);
+    });
+  });
+
+  document.getElementById('btnSyncWizardTime')?.addEventListener('click', () => {
+    wizardPresets.forEach((b) => b.classList.remove('active'));
+    document.querySelector('[data-wizard-preset="5m"]')?.classList.add('active');
+    applyWizardTimingPreset('5m');
+  });
+
+  const wizardScheduleTime = document.getElementById('wizardScheduleTime');
+  wizardScheduleTime?.addEventListener('input', () => {
+    wizardPresets.forEach((b) => b.classList.remove('active'));
+    updateWizardTimingDisplay();
+  });
+  wizardScheduleTime?.addEventListener('change', () => {
+    updateWizardTimingDisplay();
+  });
+
+  // Set default timing for wizard to Today in 5 mins
+  applyWizardTimingPreset('5m');
+
+  // Close button for upload confirmation toast
+  document.getElementById('btnCloseUploadToast')?.addEventListener('click', () => {
+    document.getElementById('uploadSuccessToast')?.classList.add('hidden');
+  });
+
+  // Wizard Submit Handlers
+  document.getElementById('btnScheduleBatchSubmit')?.addEventListener('click', () => submitWizardBatch(false));
+  document.getElementById('btnStartBatchNowSubmit')?.addEventListener('click', () => submitWizardBatch(true));
+}
+
+function applyWizardTimingPreset(presetKey) {
+  const now = new Date();
+  let target = new Date();
+
+  if (presetKey === '5m') {
+    target = new Date(now.getTime() + 5 * 60 * 1000);
+  } else if (presetKey === '15m') {
+    target = new Date(now.getTime() + 15 * 60 * 1000);
+  } else if (presetKey === '1h') {
+    target = new Date(now.getTime() + 60 * 60 * 1000);
+  } else if (presetKey === 'today-6pm') {
+    target = new Date();
+    target.setHours(18, 0, 0, 0);
+    if (target.getTime() <= now.getTime()) {
+      target = new Date(now.getTime() + 60 * 60 * 1000);
+    }
+  } else if (presetKey === 'tomorrow-10am') {
+    target.setDate(target.getDate() + 1);
+    target.setHours(10, 0, 0, 0);
+  } else if (presetKey === '2d') {
+    target.setDate(target.getDate() + 2);
+    target.setHours(10, 0, 0, 0);
+  }
+
+  const wizardScheduleTime = document.getElementById('wizardScheduleTime');
+  if (wizardScheduleTime) {
+    wizardScheduleTime.value = formatToLocalDateTimeString(target);
+  }
+  updateWizardTimingDisplay();
+}
+
+function updateWizardTimingDisplay() {
+  const wizardScheduleTime = document.getElementById('wizardScheduleTime');
+  const display = document.getElementById('wizardScheduledDisplay');
+  if (!wizardScheduleTime || !display) return;
+
+  const val = wizardScheduleTime.value;
+  if (!val) {
+    display.textContent = '⏰ Pick date & time';
+    return;
+  }
+  const d = new Date(val);
+  if (isNaN(d.getTime())) {
+    display.textContent = '⏰ Invalid date';
+  } else {
+    const diffMs = d.getTime() - Date.now();
+    const diffMins = Math.round(diffMs / 60000);
+    let rel = '';
+    if (diffMins <= 0) rel = 'Due now';
+    else if (diffMins < 60) rel = `in ${diffMins} min${diffMins > 1 ? 's' : ''}`;
+    else if (diffMins < 1440) rel = `in ~${Math.round(diffMins / 60)} hrs`;
+    else rel = `in ~${Math.round(diffMins / 1440)} days`;
+    display.textContent = `⏰ Starts ${rel} (${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+  }
+}
+
+function showUploadToast(total, valid, duplicates = 0, invalid = 0) {
+  const toast = document.getElementById('uploadSuccessToast');
+  const title = document.getElementById('uploadToastTitle');
+  const desc = document.getElementById('uploadToastDesc');
+  if (!toast) return;
+
+  title.textContent = '🎉 CSV Uploaded Successfully!';
+  desc.textContent = `Extracted ${total} contacts (${valid} valid, ${duplicates} duplicates, ${invalid} invalid).`;
+  toast.classList.remove('hidden');
+
+  setTimeout(() => {
+    toast.classList.add('hidden');
+  }, 5000);
+}
+
+function handleCSVFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const content = e.target.result;
+    const parsed = parseCSV(content);
+
+    // Show Top Confirmation Banner with file name and contact count
+    const banner = document.getElementById('csvSuccessBanner');
+    const bannerFile = document.getElementById('csvAlertFilename');
+    const bannerCount = document.getElementById('csvAlertCount');
+    if (banner && bannerFile && bannerCount) {
+      bannerFile.textContent = file.name;
+      bannerCount.textContent = `${parsed.rows.length} contacts found & ready`;
+      banner.classList.remove('hidden');
+    }
+
+    // Show Uploaded File Card in Step 1 so user clearly sees the file name and is never confused
+    const fileCard = document.getElementById('uploadedFileCard');
+    const dropzone = document.getElementById('dropzoneArea');
+    const fileNameDisplay = document.getElementById('uploadedFileNameDisplay');
+    const fileDetailsDisplay = document.getElementById('uploadedFileDetails');
+    if (fileCard && dropzone && fileNameDisplay && fileDetailsDisplay) {
+      fileNameDisplay.textContent = file.name;
+      const sizeKb = (file.size / 1024).toFixed(1);
+      fileDetailsDisplay.textContent = `${parsed.rows.length} contacts parsed • ${sizeKb} KB • CSV Document`;
+      dropzone.classList.add('hidden');
+      fileCard.classList.remove('hidden');
+    }
+
+    // Auto-fill campaign title from filename
+    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    const titleInput = document.getElementById('wizardBatchTitle');
+    if (titleInput && !titleInput.value) {
+      titleInput.value = `${cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1)} Follow-up`;
+    }
+
+    handleParsedRows(parsed.headers, parsed.rows);
+  };
+  reader.readAsText(file);
+}
+
+function handleParsedRows(headers, rows) {
+  wizardHeaders = headers;
+  wizardRawRows = rows;
+
+  const mappingCard = document.getElementById('mappingCard');
+  mappingCard.classList.remove('hidden');
+
+  // Populate column selectors
+  const phoneSelect = document.getElementById('selectPhoneCol');
+  const nameSelect = document.getElementById('selectNameCol');
+  phoneSelect.innerHTML = '';
+  nameSelect.innerHTML = '<option value="">-- Auto-generate names --</option>';
+
+  headers.forEach((h) => {
+    const optP = document.createElement('option');
+    optP.value = h;
+    optP.textContent = h;
+    phoneSelect.appendChild(optP);
+
+    const optN = document.createElement('option');
+    optN.value = h;
+    optN.textContent = h;
+    nameSelect.appendChild(optN);
+  });
+
+  // Auto-detect best columns
+  const detected = autoDetectColumns(headers);
+  if (detected.phoneColumn) phoneSelect.value = detected.phoneColumn;
+  if (detected.nameColumn) nameSelect.value = detected.nameColumn;
+
+  // Populate dynamic variable pills in step 2
+  populateVariablePills(headers);
+
+  // Process rows
+  reprocessWizardRecipients();
+
+  // Show positive upload confirmation toast!
+  showUploadToast(
+    rows.length,
+    wizardProcessedRecipients.length,
+    wizardRawRows.length - wizardProcessedRecipients.length
+  );
+  SoundPlayer.playChime(0.6);
+}
+
+function populateVariablePills(headers) {
+  const container = document.getElementById('variablePillsContainer');
+  container.innerHTML = '';
+
+  headers.forEach((h) => {
+    const cleanVar = h.toLowerCase().trim();
+    const pill = document.createElement('span');
+    pill.className = 'pill-var';
+    pill.textContent = `+ {{${cleanVar}}}`;
+    pill.addEventListener('click', () => {
+      insertVariableIntoMessage(`{{${cleanVar}}}`);
+    });
+    container.appendChild(pill);
+  });
+}
+
+function insertVariableIntoMessage(varText) {
+  const textarea = document.getElementById('wizardMessageBody');
+  const start = textarea.selectionStart || 0;
+  const end = textarea.selectionEnd || 0;
+  const val = textarea.value;
+
+  textarea.value = val.substring(0, start) + varText + val.substring(end);
+  textarea.focus();
+  textarea.selectionStart = textarea.selectionEnd = start + varText.length;
+  updateLivePreview();
+}
+
+function reprocessWizardRecipients() {
+  const phoneCol = document.getElementById('selectPhoneCol').value;
+  const nameCol = document.getElementById('selectNameCol').value;
+  const defaultCC = document.getElementById('selectDefaultCC').value || '91';
+
+  const processed = processRecipientsList(wizardRawRows, {
+    phoneColumn: phoneCol,
+    nameColumn: nameCol
+  }, defaultCC);
+
+  wizardProcessedRecipients = processed.recipients.filter((r) => r.isValid && !r.isDuplicate);
+
+  // Update summary badge counts
+  document.getElementById('badgeValidCount').textContent = `${processed.validCount} Valid`;
+  document.getElementById('badgeFormattedCount').textContent = `${wizardProcessedRecipients.length} Ready`;
+  document.getElementById('badgeDuplicateCount').textContent = `${processed.duplicateCount} Duplicates`;
+  document.getElementById('badgeInvalidCount').textContent = `${processed.invalidCount} Invalid`;
+
+  // Render preview table of first 5 rows
+  renderPreviewTable(processed.recipients.slice(0, 5));
+
+  wizardSampleIndex = 0;
+  updateLivePreview();
+}
+
+function renderPreviewTable(sampleRecipients) {
+  const thead = document.getElementById('previewTableHead');
+  const tbody = document.getElementById('previewTableBody');
+  thead.innerHTML = '<th>Row</th><th>Name</th><th>Phone</th><th>Status</th>';
+  tbody.innerHTML = '';
+
+  sampleRecipients.forEach((r) => {
+    const tr = document.createElement('tr');
+    let statusBadge = '<span class="stat-badge stat-valid">Valid</span>';
+    if (!r.isValid) statusBadge = `<span class="stat-badge stat-invalid">${escapeHtml(r.validationError || 'Invalid')}</span>`;
+    else if (r.isDuplicate) statusBadge = '<span class="stat-badge stat-duplicate">Duplicate</span>';
+
+    tr.innerHTML = `
+      <td>#${r.rowIndex}</td>
+      <td><strong>${escapeHtml(r.name)}</strong></td>
+      <td>${escapeHtml(r.phone)}</td>
+      <td>${statusBadge}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function updateLivePreview() {
+  const messageBody = document.getElementById('wizardMessageBody').value;
+  const sampleText = document.getElementById('sampleIndexText');
+  const previewName = document.getElementById('previewContactName');
+  const previewPhone = document.getElementById('previewContactPhone');
+  const bubbleText = document.getElementById('liveBubbleText');
+
+  if (wizardProcessedRecipients.length === 0) {
+    bubbleText.textContent = messageBody || 'Upload a CSV to see live preview with real recipient data.';
+    return;
+  }
+
+  const recipient = wizardProcessedRecipients[wizardSampleIndex];
+  if (!recipient) return;
+
+  sampleText.textContent = `Previewing Recipient #${wizardSampleIndex + 1} of ${wizardProcessedRecipients.length}`;
+  previewName.textContent = recipient.name;
+  previewPhone.textContent = `+${recipient.phone}`;
+
+  const rendered = renderTemplate(messageBody, recipient.customFields || { name: recipient.name, phone: recipient.phone });
+  bubbleText.textContent = rendered || 'Type a message above to see it rendered here.';
+
+  // Check pre-flight variable health
+  const validation = validateBatchVariables(messageBody, wizardProcessedRecipients);
+  const warnBanner = document.getElementById('variableWarningBanner');
+  const warnText = document.getElementById('variableWarningText');
+  const btnAutoAddFallback = document.getElementById('btnAutoAddFallback');
+
+  if (!validation.isValid && validation.summaryMessage) {
+    warnBanner.classList.remove('hidden');
+    warnText.textContent = validation.summaryMessage;
+    if (btnAutoAddFallback && validation.primaryMissingVar) {
+      btnAutoAddFallback.style.display = 'inline-block';
+      btnAutoAddFallback.textContent = `✨ Auto-Add Fallback: {{${validation.primaryMissingVar}|there}}`;
+      btnAutoAddFallback.onclick = () => {
+        const textarea = document.getElementById('wizardMessageBody');
+        const target = new RegExp(`\\{\\{\\s*${validation.primaryMissingVar}\\s*\\}\\}`, 'g');
+        textarea.value = textarea.value.replace(target, `{{${validation.primaryMissingVar}|there}}`);
+        updateLivePreview();
+      };
+    } else if (btnAutoAddFallback) {
+      btnAutoAddFallback.style.display = 'none';
+    }
+  } else {
+    warnBanner.classList.add('hidden');
+  }
+}
+
+async function submitWizardBatch(startImmediately = false) {
+  try {
+    if (wizardProcessedRecipients.length === 0) {
+      alert('Please import at least one valid recipient first.');
+      return;
+    }
+
+    const title = document.getElementById('wizardBatchTitle').value.trim();
+    if (!title) {
+      alert('Please enter a campaign title.');
+      document.getElementById('wizardBatchTitle').focus();
+      return;
+    }
+
+    const messageBody = document.getElementById('wizardMessageBody').value.trim();
+    if (!messageBody) {
+      alert('Please enter your follow-up message.');
+      document.getElementById('wizardMessageBody').focus();
+      return;
+    }
+
+    const scheduleInput = document.getElementById('wizardScheduleTime')?.value;
+    let scheduledDate;
+    if (startImmediately) {
+      scheduledDate = new Date();
+    } else if (scheduleInput) {
+      const p = new Date(scheduleInput);
+      scheduledDate = isNaN(p.getTime()) ? new Date(Date.now() + 5 * 60 * 1000) : p;
+    } else {
+      scheduledDate = new Date(Date.now() + 5 * 60 * 1000);
+    }
+    const scheduledAt = scheduledDate.toISOString();
+    const pacingSeconds = document.getElementById('wizardEnablePacing')?.checked ? 10 : 0;
+
+    // Pre-render messages for all recipients
+    const renderedRecipients = renderBatchRecipients(messageBody, wizardProcessedRecipients);
+
+    const newBatch = {
+      title,
+      type: 'batch',
+      templateBody: messageBody,
+      recipients: renderedRecipients,
+      currentIndex: 0,
+      scheduledAt,
+      pacingSeconds,
+      status: startImmediately ? BATCH_STATUS.IN_PROGRESS : BATCH_STATUS.SCHEDULED
+    };
+
+    const saved = await StorageService.saveBatch(newBatch);
+
+    if (startImmediately) {
+      // Open in Side Panel right now!
+      chrome.runtime.sendMessage({ type: 'OPEN_WORKSPACE', batchId: saved.id });
+    } else {
+      // Schedule alarm
+      chrome.runtime.sendMessage({
+        type: 'SCHEDULE_BATCH',
+        batchId: saved.id,
+        scheduledAt: saved.scheduledAt
+      });
+      alert(`🎉 Batch "${title}" scheduled for ${new Date(scheduledAt).toLocaleString()}!`);
+      switchTab('tab-batches');
+    }
+  } catch (err) {
+    console.error('[PingLater Wizard] Failed to schedule batch:', err);
+    alert('Failed to schedule batch: ' + err.message);
+  }
+}
+
+// ==========================================
+// TAB 3: QUICK 1-TO-1 FOLLOW-UP
+// ==========================================
+
+function setupQuickPingTab() {
+  const singleTemplateSelect = document.getElementById('singleTemplateSelect');
+  const singleMessage = document.getElementById('singleMessage');
+  const singleScheduleTime = document.getElementById('singleScheduledTime');
+  const singleScheduledDisplay = document.getElementById('singleScheduledDisplay');
+  const quickToast = document.getElementById('quickToast');
+  const quickToastTitle = document.getElementById('quickToastTitle');
+  const quickToastMessage = document.getElementById('quickToastMessage');
+
+  // Set default timing to Today in 5 mins (not 10-15 mins ahead!)
+  applyTimingPreset('5m');
+
+  // Handle Preset Pills
+  const presetButtons = document.querySelectorAll('#tab-quick-ping .btn-timing-preset');
+  presetButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      presetButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const presetKey = btn.getAttribute('data-preset');
+      applyTimingPreset(presetKey);
+    });
+  });
+
+  // Handle Sync Button for Quick 1-to-1
+  document.getElementById('btnSyncQuickTime')?.addEventListener('click', () => {
+    presetButtons.forEach((b) => b.classList.remove('active'));
+    document.querySelector('#tab-quick-ping [data-preset="5m"]')?.classList.add('active');
+    applyTimingPreset('5m');
+  });
+
+  // When user manually picks date/time in the input
+  singleScheduleTime?.addEventListener('input', () => {
+    presetButtons.forEach((b) => b.classList.remove('active'));
+    updateTimingDisplayFromInput();
+  });
+  singleScheduleTime?.addEventListener('change', () => {
+    updateTimingDisplayFromInput();
+  });
+
+  function applyTimingPreset(presetKey) {
+    const now = new Date();
+    let target = new Date();
+
+    if (presetKey === '5m') {
+      target = new Date(now.getTime() + 5 * 60 * 1000);
+    } else if (presetKey === '15m') {
+      target = new Date(now.getTime() + 15 * 60 * 1000);
+    } else if (presetKey === '1h') {
+      target = new Date(now.getTime() + 60 * 60 * 1000);
+    } else if (presetKey === 'today-6pm') {
+      target = new Date();
+      target.setHours(18, 0, 0, 0);
+      if (target.getTime() <= now.getTime()) {
+        target = new Date(now.getTime() + 60 * 60 * 1000);
+      }
+    } else if (presetKey === 'tomorrow-10am') {
+      target.setDate(target.getDate() + 1);
+      target.setHours(10, 0, 0, 0);
+    } else if (presetKey === '2d') {
+      target.setDate(target.getDate() + 2);
+      target.setHours(10, 0, 0, 0);
+    }
+
+    if (singleScheduleTime) {
+      singleScheduleTime.value = formatToLocalDateTimeString(target);
+    }
+    updateTimingDisplayFromInput();
+  }
+
+  function updateTimingDisplayFromInput() {
+    if (!singleScheduleTime || !singleScheduledDisplay) return;
+    const val = singleScheduleTime.value;
+    if (!val) {
+      singleScheduledDisplay.textContent = '⏰ Pick date & time';
+      return;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) {
+      singleScheduledDisplay.textContent = '⏰ Invalid date';
+    } else {
+      const diffMs = d.getTime() - Date.now();
+      const diffMins = Math.round(diffMs / 60000);
+      let rel = '';
+      if (diffMins <= 0) rel = 'Due now';
+      else if (diffMins < 60) rel = `in ${diffMins} min${diffMins > 1 ? 's' : ''}`;
+      else if (diffMins < 1440) rel = `in ~${Math.round(diffMins / 60)} hrs`;
+      else rel = `in ~${Math.round(diffMins / 1440)} days`;
+      singleScheduledDisplay.textContent = `⏰ Starts ${rel} (${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+    }
+  }
+
+  // Handle Template Dropdown selection
+  singleTemplateSelect?.addEventListener('change', (e) => {
+    const tplId = e.target.value;
+    if (!tplId) return;
+    const tpl = currentTemplates.find((t) => t.id === tplId);
+    if (tpl) {
+      singleMessage.value = tpl.body;
+    }
+  });
+
+  // Save current text as new reusable template
+  document.getElementById('btnSaveCurrentAsTemplate')?.addEventListener('click', async () => {
+    const text = singleMessage.value.trim();
+    if (!text) {
+      alert('Please write a message first before saving as a template.');
+      singleMessage.focus();
+      return;
+    }
+    const title = prompt('Enter a name for this template:', 'Custom Follow-up');
+    if (!title || !title.trim()) return;
+
+    const vars = extractVariables(text);
+    await StorageService.saveTemplate({
+      title: title.trim(),
+      category: 'General',
+      body: text,
+      variables: vars
+    });
+
+    await refreshTemplatesList();
+    alert(`🎉 Template "${title}" saved and added to your templates!`);
+  });
+
+  // Action: Schedule 1-on-1 Follow-up
+  document.getElementById('btnSaveSingleFollowup')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    try {
+      const name = document.getElementById('singleName').value.trim();
+      const phoneRaw = document.getElementById('singlePhone').value.trim();
+      const message = document.getElementById('singleMessage').value.trim();
+
+      if (!name) {
+        alert('Please enter a Contact Name.');
+        document.getElementById('singleName').focus();
+        return;
+      }
+      if (!phoneRaw) {
+        alert('Please enter a WhatsApp Phone Number.');
+        document.getElementById('singlePhone').focus();
+        return;
+      }
+      if (!message) {
+        alert('Please enter your follow-up message.');
+        document.getElementById('singleMessage').focus();
+        return;
+      }
+
+      const defaultCC = currentSettings ? currentSettings.defaultCountryCode : '91';
+      const norm = normalizePhoneNumber(phoneRaw, defaultCC);
+      if (!norm.isValid) {
+        alert(`Invalid phone number: ${norm.error || 'Please enter at least 10 digits'}`);
+        document.getElementById('singlePhone').focus();
+        return;
+      }
+
+      // Safe date parsing from input
+      let scheduledDate;
+      const val = singleScheduleTime ? singleScheduleTime.value : null;
+      if (val) {
+        const p = new Date(val);
+        scheduledDate = isNaN(p.getTime()) ? new Date(Date.now() + 15 * 60 * 1000) : p;
+      } else {
+        scheduledDate = new Date(Date.now() + 15 * 60 * 1000);
+      }
+
+      const scheduledAt = scheduledDate.toISOString();
+      const rendered = renderTemplate(message, { name, phone: norm.normalized });
+
+      const batch = {
+        title: `Follow-up with ${name}`,
+        type: 'single',
+        templateBody: message,
+        recipients: [{
+          id: `rec_single_${Date.now()}`,
+          name,
+          phone: norm.normalized,
+          renderedMessage: rendered,
+          status: RECIPIENT_STATUS.PENDING,
+          customFields: { name, phone: norm.normalized }
+        }],
+        currentIndex: 0,
+        scheduledAt,
+        pacingSeconds: 0,
+        status: BATCH_STATUS.SCHEDULED
+      };
+
+      const saved = await StorageService.saveBatch(batch);
+
+      // Register Chrome alarm via background
+      chrome.runtime.sendMessage({
+        type: 'SCHEDULE_BATCH',
+        batchId: saved.id,
+        scheduledAt
+      });
+
+      // Notify Side Panel so it updates its queue in real-time
+      chrome.runtime.sendMessage({
+        type: 'LOAD_BATCH_IN_SIDEPANEL',
+        batchId: saved.id
+      }).catch(() => {});
+
+      // Show inline success toast
+      if (quickToast) {
+        quickToastTitle.textContent = `Scheduled with ${name}!`;
+        quickToastMessage.textContent = `Reminder set for ${scheduledDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`;
+        quickToast.classList.remove('hidden');
+      }
+
+      // Refresh batches table and switch to batches view after short delay
+      await refreshBatchesList();
+      setTimeout(() => {
+        if (quickToast) quickToast.classList.add('hidden');
+        switchTab('tab-batches');
+      }, 1000);
+
+    } catch (err) {
+      console.error('[PingLater] Error scheduling 1-on-1:', err);
+      alert('Error scheduling follow-up: ' + err.message);
+    }
+  });
+
+  // Action: Open in WhatsApp Now
+  document.getElementById('btnSendSingleNow')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    try {
+      const name = document.getElementById('singleName').value.trim();
+      const phoneRaw = document.getElementById('singlePhone').value.trim();
+      const message = document.getElementById('singleMessage').value.trim();
+
+      if (!phoneRaw) {
+        alert('Please enter a WhatsApp Phone Number to open the chat.');
+        document.getElementById('singlePhone').focus();
+        return;
+      }
+
+      const defaultCC = currentSettings ? currentSettings.defaultCountryCode : '91';
+      const norm = normalizePhoneNumber(phoneRaw, defaultCC);
+      if (!norm.isValid) {
+        alert(`Invalid phone number: ${norm.error || 'Please enter at least 10 digits'}`);
+        document.getElementById('singlePhone').focus();
+        return;
+      }
+
+      const rendered = renderTemplate(message || 'Hi', { name: name || 'there', phone: norm.normalized });
+      await WhatsAppOrchestrator.loadContact(norm.normalized, rendered);
+    } catch (err) {
+      console.error('[PingLater] Error opening WhatsApp now:', err);
+      alert('Could not open WhatsApp: ' + err.message);
+    }
+  });
+}
+
+function formatToLocalDateTimeString(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+// ==========================================
+// MODAL: EDIT SCHEDULE & BATCH
+// ==========================================
+
+let editingBatchId = null;
+
+function setupEditScheduleModal() {
+  const modal = document.getElementById('editScheduleModal');
+  const closeBtn = document.getElementById('btnCloseEditScheduleModal');
+  const cancelBtn = document.getElementById('btnCancelEditScheduleModal');
+  const saveBtn = document.getElementById('btnSaveEditScheduleModal');
+  const timeInput = document.getElementById('editScheduleTimeInput');
+  const displaySpan = document.getElementById('editScheduleTimeDisplay');
+
+  // Close handlers
+  closeBtn?.addEventListener('click', closeEditScheduleModal);
+  cancelBtn?.addEventListener('click', closeEditScheduleModal);
+
+  // Preset pills
+  const editPresets = modal?.querySelectorAll('.btn-timing-preset[data-edit-preset]');
+  editPresets?.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editPresets.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const preset = btn.getAttribute('data-edit-preset');
+      applyEditTimingPreset(preset);
+    });
+  });
+
+  // Time input manual change
+  timeInput?.addEventListener('input', () => {
+    editPresets?.forEach((b) => b.classList.remove('active'));
+    updateEditTimingDisplay();
+  });
+  timeInput?.addEventListener('change', updateEditTimingDisplay);
+
+  function applyEditTimingPreset(presetKey) {
+    const now = new Date();
+    let target = new Date();
+    if (presetKey === '15m') {
+      target = new Date(now.getTime() + 15 * 60 * 1000);
+    } else if (presetKey === '1h') {
+      target = new Date(now.getTime() + 60 * 60 * 1000);
+    } else if (presetKey === 'tomorrow-10am') {
+      target.setDate(target.getDate() + 1);
+      target.setHours(10, 0, 0, 0);
+    } else if (presetKey === '2d') {
+      target.setDate(target.getDate() + 2);
+      target.setHours(10, 0, 0, 0);
+    }
+
+    if (timeInput) {
+      timeInput.value = formatToLocalDateTimeString(target);
+    }
+    updateEditTimingDisplay();
+  }
+
+  function updateEditTimingDisplay() {
+    if (!timeInput || !displaySpan) return;
+    const val = timeInput.value;
+    if (!val) {
+      displaySpan.textContent = '⏰ Pick date & time';
+      return;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) {
+      displaySpan.textContent = '⏰ Invalid date';
+    } else {
+      displaySpan.textContent = `⏰ ${d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+    }
+  }
+
+  // Save handler
+  saveBtn?.addEventListener('click', async () => {
+    if (!editingBatchId) return;
+    const batch = currentBatches.find((b) => b.id === editingBatchId);
+    if (!batch) return;
+
+    const titleInput = document.getElementById('editBatchTitleInput');
+    const msgInput = document.getElementById('editBatchMessageInput');
+    const newTitle = titleInput ? titleInput.value.trim() : '';
+    const newMsg = msgInput ? msgInput.value.trim() : '';
+    const timeVal = timeInput ? timeInput.value : '';
+
+    if (!newTitle) {
+      alert('Please enter a title for the batch.');
+      titleInput?.focus();
+      return;
+    }
+
+    if (!timeVal) {
+      alert('Please pick a scheduled date & time.');
+      timeInput?.focus();
+      return;
+    }
+
+    const scheduledDate = new Date(timeVal);
+    if (isNaN(scheduledDate.getTime())) {
+      alert('Please select a valid date & time.');
+      timeInput?.focus();
+      return;
+    }
+
+    const scheduledAt = scheduledDate.toISOString();
+
+    // Update batch properties
+    batch.title = newTitle;
+    batch.scheduledAt = scheduledAt;
+    if (batch.status === BATCH_STATUS.OVERDUE || batch.status === BATCH_STATUS.SCHEDULED) {
+      batch.status = BATCH_STATUS.SCHEDULED;
+    }
+
+    if (newMsg && newMsg !== batch.templateBody) {
+      batch.templateBody = newMsg;
+      if (batch.recipients && batch.recipients.length === 1) {
+        batch.recipients[0].renderedMessage = newMsg;
+      }
+    }
+
+    await StorageService.saveBatch(batch);
+
+    // Update alarm
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({
+        type: 'CANCEL_BATCH_ALARM',
+        batchId: batch.id
+      });
+      chrome.runtime.sendMessage({
+        type: 'SCHEDULE_BATCH',
+        batchId: batch.id,
+        scheduledAt
+      });
+    }
+
+    closeEditScheduleModal();
+    await refreshBatchesList();
+    alert(`✅ Schedule updated! Follow-up set for ${scheduledDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`);
+  });
+}
+
+function openEditScheduleModal(batch) {
+  if (!batch) return;
+  editingBatchId = batch.id;
+
+  const modal = document.getElementById('editScheduleModal');
+  const titleInput = document.getElementById('editBatchTitleInput');
+  const timeInput = document.getElementById('editScheduleTimeInput');
+  const msgInput = document.getElementById('editBatchMessageInput');
+  const displaySpan = document.getElementById('editScheduleTimeDisplay');
+
+  if (titleInput) titleInput.value = batch.title || '';
+  if (msgInput) {
+    msgInput.value = batch.templateBody || (batch.recipients && batch.recipients[0] ? batch.recipients[0].renderedMessage : '') || '';
+  }
+
+  if (batch.scheduledAt && timeInput) {
+    const d = new Date(batch.scheduledAt);
+    timeInput.value = formatToLocalDateTimeString(d);
+    if (displaySpan) {
+      displaySpan.textContent = `⏰ ${d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+    }
+  }
+
+  modal?.classList.remove('hidden');
+}
+
+function closeEditScheduleModal() {
+  editingBatchId = null;
+  const modal = document.getElementById('editScheduleModal');
+  modal?.classList.add('hidden');
+}
+
+// ==========================================
+// MODAL: SKIPPED RECIPIENTS BREAKDOWN & EXPORT
+// ==========================================
+
+let currentSkippedBatch = null;
+
+function setupSkippedModal() {
+  const modal = document.getElementById('skippedRecipientsModal');
+  document.getElementById('btnCloseSkippedModal')?.addEventListener('click', () => {
+    modal?.classList.add('hidden');
+  });
+  document.getElementById('btnCloseSkippedModalBtn')?.addEventListener('click', () => {
+    modal?.classList.add('hidden');
+  });
+
+  document.getElementById('btnExportSkippedCSV')?.addEventListener('click', () => {
+    if (!currentSkippedBatch) return;
+    const skipped = (currentSkippedBatch.recipients || []).filter((r) => r.status === RECIPIENT_STATUS.SKIPPED);
+    if (skipped.length === 0) {
+      alert('No skipped contacts to export in this batch.');
+      return;
+    }
+
+    const headers = ['#', 'Name', 'Phone', 'Status', 'Message'];
+    const rows = skipped.map((r, i) => [
+      i + 1,
+      `"${(r.name || '').replace(/"/g, '""')}"`,
+      `"${r.phone}"`,
+      `"Skipped"`,
+      `"${(r.renderedMessage || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${currentSkippedBatch.title.replace(/\s+/g, '_')}_Skipped_Contacts.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+}
+
+function openSkippedRecipientsModal(batch) {
+  if (!batch) return;
+  currentSkippedBatch = batch;
+
+  const modal = document.getElementById('skippedRecipientsModal');
+  const title = document.getElementById('skippedModalTitle');
+  const tbody = document.getElementById('skippedTableBody');
+  if (!modal || !tbody) return;
+
+  const skipped = (batch.recipients || []).filter((r) => r.status === RECIPIENT_STATUS.SKIPPED);
+  title.textContent = `⚠️ Skipped Contacts in "${batch.title}" (${skipped.length})`;
+
+  tbody.innerHTML = '';
+  if (skipped.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #64748b;">No skipped contacts found in this batch.</td></tr>';
+  } else {
+    skipped.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">#${idx + 1}</td>
+        <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 600;">${escapeHtml(r.name || 'Unnamed')}</td>
+        <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">+${escapeHtml(r.phone)}</td>
+        <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;"><span class="stat-badge stat-invalid">Skipped (Not on WhatsApp / Passed)</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  modal.classList.remove('hidden');
+}
+
+// ==========================================
+// TAB 4: MESSAGE TEMPLATES MANAGER
+// ==========================================
+
+let templateFilterCat = 'all';
+
+function setupTemplatesTab() {
+  const catPills = document.querySelectorAll('#templateCategoryPills .pill');
+  catPills.forEach((p) => {
+    p.addEventListener('click', () => {
+      catPills.forEach((x) => x.classList.remove('active'));
+      p.classList.add('active');
+      templateFilterCat = p.getAttribute('data-cat') || 'all';
+      renderTemplatesList();
+    });
+  });
+
+  document.getElementById('btnOpenNewTemplateModal')?.addEventListener('click', () => {
+    openTemplateModal();
+  });
+
+  document.getElementById('btnCloseTemplateModal')?.addEventListener('click', closeTemplateModal);
+  document.getElementById('btnCancelTemplateModal')?.addEventListener('click', closeTemplateModal);
+
+  document.getElementById('btnSaveTemplateModal')?.addEventListener('click', async () => {
+    const id = document.getElementById('editTemplateId').value;
+    const title = document.getElementById('templateTitleInput').value.trim();
+    const category = document.getElementById('templateCategoryInput').value;
+    const body = document.getElementById('templateBodyInput').value.trim();
+
+    if (!title || !body) {
+      alert('Please enter both Template Name and Message Body.');
+      return;
+    }
+
+    const vars = extractVariables(body);
+    await StorageService.saveTemplate({
+      id: id || undefined,
+      title,
+      category,
+      body,
+      variables: vars
+    });
+
+    closeTemplateModal();
+    refreshTemplatesList();
+  });
+
+  // Modal variable pill inserters
+  document.querySelectorAll('.modal-pills-row .pill-var').forEach((p) => {
+    p.addEventListener('click', () => {
+      const v = p.getAttribute('data-tpl-var');
+      const textarea = document.getElementById('templateBodyInput');
+      const start = textarea.selectionStart || 0;
+      textarea.value = textarea.value.substring(0, start) + `{{${v}}}` + textarea.value.substring(textarea.selectionEnd);
+      textarea.focus();
+    });
+  });
+}
+
+async function refreshTemplatesList() {
+  currentTemplates = await StorageService.getTemplates();
+  renderTemplatesList();
+  populateTemplateDropdowns();
+}
+
+function renderTemplatesList() {
+  const container = document.getElementById('templatesListContainer');
+  container.innerHTML = '';
+
+  const filtered = currentTemplates.filter((t) => {
+    if (templateFilterCat === 'all') return true;
+    return t.category === templateFilterCat;
+  });
+
+  filtered.forEach((tpl) => {
+    const card = document.createElement('div');
+    card.className = 'template-card';
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h4>${escapeHtml(tpl.title)}</h4>
+        <span class="badge badge-scheduled">${escapeHtml(tpl.category || 'General')}</span>
+      </div>
+      <div class="tpl-bubble">${escapeHtml(tpl.body)}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:auto;">
+        <button class="btn btn-outline btn-sm btn-edit-tpl">✏️ Edit</button>
+        <button class="btn btn-danger btn-sm btn-del-tpl">🗑️ Delete</button>
+      </div>
+    `;
+
+    card.querySelector('.btn-edit-tpl').addEventListener('click', () => openTemplateModal(tpl));
+    card.querySelector('.btn-del-tpl').addEventListener('click', async () => {
+      if (confirm(`Delete template "${tpl.title}"?`)) {
+        await StorageService.deleteTemplate(tpl.id);
+        refreshTemplatesList();
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+function populateTemplateDropdowns() {
+  const wizardSelect = document.getElementById('selectTemplateInWizard');
+  const singleSelect = document.getElementById('singleTemplateSelect');
+
+  function buildGroupedOptions(defaultLabel) {
+    const profTemplates = currentTemplates.filter((t) => t.category === 'Professional');
+    const casualTemplates = currentTemplates.filter((t) => t.category === 'Casual');
+    const otherTemplates = currentTemplates.filter((t) => t.category !== 'Professional' && t.category !== 'Casual');
+
+    let html = `<option value="">-- ${defaultLabel} --</option>`;
+
+    if (profTemplates.length > 0) {
+      html += '<optgroup label="💼 Professional Follow-ups">';
+      profTemplates.forEach((t) => {
+        html += `<option value="${t.id}">${escapeHtml(t.title)}</option>`;
+      });
+      html += '</optgroup>';
+    }
+
+    if (casualTemplates.length > 0) {
+      html += '<optgroup label="💬 Casual & Friendly Check-ins">';
+      casualTemplates.forEach((t) => {
+        html += `<option value="${t.id}">${escapeHtml(t.title)}</option>`;
+      });
+      html += '</optgroup>';
+    }
+
+    if (otherTemplates.length > 0) {
+      html += '<optgroup label="📁 Custom & Saved Templates">';
+      otherTemplates.forEach((t) => {
+        html += `<option value="${t.id}">${escapeHtml(t.title)}</option>`;
+      });
+      html += '</optgroup>';
+    }
+
+    return html;
+  }
+
+  if (wizardSelect) {
+    wizardSelect.innerHTML = buildGroupedOptions('Write Custom Message');
+  }
+
+  if (singleSelect) {
+    singleSelect.innerHTML = buildGroupedOptions('Custom Message (Type below)');
+  }
+}
+
+function openTemplateModal(tpl = null) {
+  const modal = document.getElementById('templateModal');
+  const titleInput = document.getElementById('templateTitleInput');
+  const catInput = document.getElementById('templateCategoryInput');
+  const bodyInput = document.getElementById('templateBodyInput');
+  const idInput = document.getElementById('editTemplateId');
+  const modalHeader = document.getElementById('templateModalTitle');
+
+  if (tpl) {
+    modalHeader.textContent = 'Edit Message Template';
+    idInput.value = tpl.id;
+    titleInput.value = tpl.title;
+    catInput.value = tpl.category || 'General';
+    bodyInput.value = tpl.body;
+  } else {
+    modalHeader.textContent = 'Create Message Template';
+    idInput.value = '';
+    titleInput.value = '';
+    catInput.value = 'General';
+    bodyInput.value = '';
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeTemplateModal() {
+  document.getElementById('templateModal').classList.add('hidden');
+}
+
+// ==========================================
+// TAB 5: SETTINGS & BACKUP
+// ==========================================
+
+function setupSettingsTab() {
+  document.getElementById('btnSaveGeneralSettings')?.addEventListener('click', async () => {
+    const cc = document.getElementById('settingsDefaultCC').value;
+    const pacing = parseInt(document.getElementById('settingsPacingSeconds').value, 10) || 4;
+    const soundEnabled = document.getElementById('settingsSoundEnabled').checked;
+    const autoLoad = document.getElementById('settingsAutoLoadNext').checked;
+
+    await StorageService.saveSettings({
+      defaultCountryCode: cc,
+      defaultPacingSeconds: pacing,
+      soundEnabled,
+      autoLoadNext: autoLoad
+    });
+    currentSettings = await StorageService.getSettings();
+    alert('Settings saved successfully!');
+  });
+
+  document.getElementById('btnSettingsTestChime')?.addEventListener('click', () => {
+    SoundPlayer.playChime(currentSettings ? currentSettings.soundVolume : 0.8);
+  });
+
+  // Export all data
+  document.getElementById('btnExportAllData')?.addEventListener('click', async () => {
+    const data = await StorageService.exportAllData();
+    const str = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2));
+    const link = document.createElement('a');
+    link.setAttribute('href', str);
+    link.setAttribute('download', `PingLater_Full_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  // Import backup
+  const importInput = document.getElementById('importBackupInput');
+  document.getElementById('btnTriggerImport')?.addEventListener('click', () => importInput.click());
+  importInput?.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const parsed = JSON.parse(evt.target.result);
+          await StorageService.importAllData(parsed);
+          alert('Backup restored successfully!');
+          window.location.reload();
+        } catch (err) {
+          alert('Invalid JSON backup file.');
+        }
+      };
+      reader.readAsText(e.target.files[0]);
+    }
+  });
+
+  // Clear data
+  document.getElementById('btnClearAllData')?.addEventListener('click', async () => {
+    if (confirm('DANGER: This will erase all batches, custom templates, and contacts. Are you sure?')) {
+      await StorageService.clearAllData();
+      alert('All stored data has been cleared.');
+      window.location.reload();
+    }
+  });
+}
+
+function populateSettingsForm() {
+  if (!currentSettings) return;
+  const cc = document.getElementById('settingsDefaultCC');
+  if (cc && currentSettings.defaultCountryCode) cc.value = currentSettings.defaultCountryCode;
+
+  const pacing = document.getElementById('settingsPacingSeconds');
+  if (pacing && currentSettings.defaultPacingSeconds) pacing.value = currentSettings.defaultPacingSeconds;
+
+  const sound = document.getElementById('settingsSoundEnabled');
+  if (sound) sound.checked = currentSettings.soundEnabled !== false;
+
+  const autoLoad = document.getElementById('settingsAutoLoadNext');
+  if (autoLoad) autoLoad.checked = currentSettings.autoLoadNext !== false;
+}
+
+// ==========================================
+// GLOBAL ACTIONS & UTILITIES
+// ==========================================
+
+function setupGlobalActions() {
+  document.getElementById('btnLaunchSidePanel')?.addEventListener('click', async () => {
+    try {
+      if (chrome.sidePanel && chrome.sidePanel.open) {
+        const win = await chrome.windows.getCurrent();
+        await chrome.sidePanel.open({ windowId: win.id });
+        return;
+      }
+    } catch (err) {
+      console.warn('[PingLater] Direct sidePanel.open failed:', err);
+    }
+    // Fallback: Opens side panel in helper docked window
+    window.open(
+      chrome.runtime.getURL('sidepanel.html'),
+      'PingLaterSidePanel',
+      'width=420,height=760,left=' + (window.screen.width - 440) + ',top=80'
+    );
+  });
+}
+
+function downloadBatchCSV(batch) {
+  if (!batch || !batch.recipients) return;
+  const rows = [];
+  const headers = ['Name', 'Phone', 'Status', 'SentAt', 'SkippedAt'];
+  rows.push(headers.join(','));
+
+  batch.recipients.forEach((r) => {
+    rows.push([
+      `"${(r.name || '').replace(/"/g, '""')}"`,
+      r.phone,
+      r.status,
+      r.sentAt || '',
+      r.skippedAt || ''
+    ].join(','));
+  });
+
+  const csv = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+  const link = document.createElement('a');
+  link.setAttribute('href', csv);
+  link.setAttribute('download', `${batch.title.replace(/\s+/g, '_')}_Report.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}

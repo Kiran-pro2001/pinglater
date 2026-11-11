@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PingLater — WhatsApp Follow-up & Batch Hub</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-name">PingLater</h1>
+          <span class="brand-tag">Never forget a follow-up</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="tab-quick-ping">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          Quick 1-to-1 Follow-up
+        </button>
+
+        <button class="nav-item" data-tab="tab-wizard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+          New Batch Wizard
+        </button>
+
+        <button class="nav-item" data-tab="tab-batches">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Batches & Follow-ups
+          <span id="navDueBadge" class="nav-badge hidden">0</span>
+        </button>
+
+        <button class="nav-item" data-tab="tab-templates">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          Message Templates
+        </button>
+
+        <button class="nav-item" data-tab="tab-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings & Backup
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="btnLaunchSidePanel" class="btn btn-sidepanel-launcher">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+          Launch Side Panel
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Alert / Notification Banner -->
+      <div id="topOverdueBanner" class="alert-banner alert-warning hidden">
+        <div class="alert-icon">⚠️</div>
+        <div class="alert-text">
+          <strong id="overdueBannerTitle">You have overdue follow-up batches!</strong>
+          <span id="overdueBannerSub">Chrome was closed or sleeping when some scheduled batches became due.</span>
+        </div>
+        <button id="btnReviewOverdue" class="btn btn-sm btn-warning-action">Review Now</button>
+      </div>
+
+      <!-- ========================================================
+           TAB: BATCHES & FOLLOW-UPS
+           ======================================================== -->
+      <section id="tab-batches" class="tab-pane">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>Batches & Scheduled Follow-ups</h2>
+              <p>Manage all your planned WhatsApp campaigns, track progress, or resume incomplete work.</p>
+            </div>
+            <div class="page-top-actions">
+              <button id="btnNewBatchTop" class="btn btn-primary btn-sm">+ New Batch Campaign</button>
+              <button id="btnQuickFollowupTop" class="btn btn-outline btn-sm">⚡ Quick 1-to-1</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter Pills & Search -->
+        <div class="filter-bar">
+          <div class="filter-pills">
+            <button class="pill active" data-filter="all">All (<span id="countAll">0</span>)</button>
+            <button class="pill" data-filter="active">Active & Due (<span id="countActive">0</span>)</button>
+            <button class="pill" data-filter="scheduled">Scheduled (<span id="countScheduled">0</span>)</button>
+            <button class="pill" data-filter="completed">Completed (<span id="countCompleted">0</span>)</button>
+          </div>
+          <div class="search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="batchSearchInput" placeholder="Search batches...">
+          </div>
+        </div>
+
+        <!-- Batches Grid Container -->
+        <div id="batchesContainer" class="batches-grid">
+          <!-- Dynamically populated batch cards -->
+        </div>
+
+        <!-- Empty Batches Fallback -->
+        <div id="batchesEmptyFallback" class="empty-state hidden">
+          <div class="empty-state-icon">📋</div>
+          <h3>No batches found</h3>
+          <p>Get started by creating your first WhatsApp follow-up batch from a CSV file or manual contact list.</p>
+          <button id="btnEmptyCreateBatch" class="btn btn-primary">+ Create Your First Batch</button>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB: NEW BATCH WIZARD
+           ======================================================== -->
+      <section id="tab-wizard" class="tab-pane">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>New Batch Campaign Wizard</h2>
+              <p>Import contacts from CSV or paste text, customize message templates, and prepare your sending queue.</p>
+            </div>
+            <div class="page-top-actions">
+              <span class="wizard-steps-indicator">
+                <span class="step-dot active">1. Recipients</span> →
+                <span class="step-dot">2. Message</span> →
+                <span class="step-dot">3. Schedule</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- CSV Upload Confirmation Banner (Appears at top after upload) -->
+        <div id="csvSuccessBanner" class="csv-upload-alert hidden">
+          <div class="csv-alert-left">
+            <div class="csv-alert-icon-circle">✅</div>
+            <div class="csv-alert-info">
+              <h4 class="csv-alert-title">CSV Uploaded Successfully!</h4>
+              <p class="csv-alert-subtitle">
+                File: <strong id="csvAlertFilename" class="csv-alert-filename">contacts.csv</strong> 
+                <span class="csv-alert-sep">•</span> 
+                <span id="csvAlertCount">0 contacts parsed</span>
+              </p>
+            </div>
+          </div>
+          <button type="button" id="btnAcknowledgeCSV" class="btn btn-success btn-sm">
+            OK, Start Working →
+          </button>
+        </div>
+
+        <div class="wizard-layout">
+          <!-- Wizard Left: Form & Inputs -->
+          <div class="wizard-main">
+            <!-- Step 1: Recipients -->
+            <div class="wizard-card">
+              <div class="wizard-card-header">
+                <span class="step-number">1</span>
+                <div>
+                  <h3>Import Recipients</h3>
+                  <p>Upload a CSV file (e.g. from Google Sheets / Excel) or paste a list.</p>
+                </div>
+              </div>
+
+              <!-- Upload Mode Selector -->
+              <div class="tab-subnav">
+                <button type="button" id="btnModeCSV" class="subnav-btn active">CSV File Upload</button>
+                <button type="button" id="btnModePaste" class="subnav-btn">Paste Numbers / Names</button>
+              </div>
+
+              <!-- CSV Dropzone -->
+              <div id="dropzoneArea" class="dropzone">
+                <input type="file" id="csvFileInput" accept=".csv,text/csv" class="file-input-hidden">
+                <div class="dropzone-content">
+                  <div class="dropzone-icon">📁</div>
+                  <h4>Drag & Drop your CSV file here</h4>
+                  <p>or click to browse your files (supports 500+ contacts)</p>
+                  <span class="file-tip">Supports columns: Name, Mobile, Ticket, Company, etc.</span>
+                </div>
+              </div>
+
+              <!-- Uploaded File Display Card (Shows file name so user is never confused) -->
+              <div id="uploadedFileCard" class="uploaded-file-card hidden">
+                <div class="file-card-left">
+                  <div class="file-icon-badge">📄</div>
+                  <div class="file-text-col">
+                    <div class="file-title-row">
+                      <strong id="uploadedFileNameDisplay" class="file-name-text">contacts.csv</strong>
+                      <span class="badge badge-completed">✓ Uploaded</span>
+                    </div>
+                    <div class="file-meta-row">
+                      <span id="uploadedFileDetails">39 contacts parsed • Ready to configure</span>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" id="btnChangeCSVFile" class="btn btn-outline btn-sm">
+                  🔄 Replace File
+                </button>
+              </div>
+
+              <!-- Raw Paste Area -->
+              <div id="pasteArea" class="paste-container hidden">
+                <label for="rawPasteText">Paste name and phone number per line:</label>
+                <textarea id="rawPasteText" rows="5" placeholder="Robin Sharma, 9123456789&#10;Alex Rivera, +91 9876500000&#10;Jordan Lee, 9998887770"></textarea>
+                <button id="btnProcessPaste" class="btn btn-secondary btn-sm mt-2">Process Pasted Text</button>
+              </div>
+
+              <!-- Ingestion Report & Column Mapping (Revealed after file upload) -->
+              <div id="mappingCard" class="mapping-card hidden">
+                <div class="mapping-summary-row">
+                  <div class="stat-badge stat-valid"><span id="badgeValidCount">0</span> Valid</div>
+                  <div class="stat-badge stat-formatted"><span id="badgeFormattedCount">0</span> Auto-Formatted</div>
+                  <div class="stat-badge stat-duplicate"><span id="badgeDuplicateCount">0</span> Duplicate</div>
+                  <div class="stat-badge stat-invalid"><span id="badgeInvalidCount">0</span> Invalid</div>
+                </div>
+
+                <div class="column-pickers-row">
+                  <div class="form-group flex-1">
+                    <label for="selectPhoneCol">Phone Column <span class="required">*</span></label>
+                    <select id="selectPhoneCol" class="form-select"></select>
+                  </div>
+                  <div class="form-group flex-1">
+                    <label for="selectNameCol">Name Column</label>
+                    <select id="selectNameCol" class="form-select"></select>
+                  </div>
+                  <div class="form-group flex-1">
+                    <label for="selectDefaultCC">Default Country Code</label>
+                    <select id="selectDefaultCC" class="form-select">
+                      <option value="91">🇮🇳 India (+91)</option>
+                      <option value="1">🇺🇸 US / Canada (+1)</option>
+                      <option value="44">🇬🇧 United Kingdom (+44)</option>
+                      <option value="971">🇦🇪 UAE (+971)</option>
+                      <option value="65">🇸🇬 Singapore (+65)</option>
+                      <option value="61">🇦🇺 Australia (+61)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Preview Table of first 5 rows -->
+                <div class="preview-table-container">
+                  <table class="preview-table">
+                    <thead>
+                      <tr id="previewTableHead"></tr>
+                    </thead>
+                    <tbody id="previewTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 2: Message & Dynamic Variables -->
+            <div id="wizardStep2Card" class="wizard-card">
+              <div class="wizard-card-header">
+                <span class="step-number">2</span>
+                <div>
+                  <h3>Craft Personalized Message</h3>
+                  <p>Pick a saved template or type a message. Click pills to insert dynamic variables.</p>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="selectTemplateInWizard">Choose Saved Template (Optional)</label>
+                <select id="selectTemplateInWizard" class="form-select">
+                  <option value="">-- Write Custom Message --</option>
+                </select>
+              </div>
+
+              <!-- Dynamic Variable Pills -->
+              <div class="variables-section">
+                <span class="var-label">Click to insert variable into message:</span>
+                <div id="variablePillsContainer" class="pills-cloud">
+                  <span class="pill-var" data-var="name">+ {{name}}</span>
+                  <span class="pill-var" data-var="phone">+ {{phone}}</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="wizardMessageBody">Message Text <span class="required">*</span></label>
+                <textarea id="wizardMessageBody" rows="6" class="form-textarea" placeholder="Hi {{name}}, your pass for {{event}} is confirmed! 🎟️ Access link: {{link}}"></textarea>
+              </div>
+
+              <!-- Validation Warnings Banner -->
+              <div id="variableWarningBanner" class="alert-banner alert-warning hidden">
+                <div class="alert-icon">⚠️</div>
+                <div class="alert-body" style="flex: 1;">
+                  <div class="alert-text" id="variableWarningText"></div>
+                  <div id="variableWarningActions" class="mt-2" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <button type="button" id="btnAutoAddFallback" class="btn btn-sm" style="background: #ffffff; border: 1px solid #d97706; color: #92400e; font-weight: 700; border-radius: 6px; padding: 4px 10px; cursor: pointer;">
+                      ✨ Auto-Add Fallback: {{first_name|there}}
+                    </button>
+                    <span style="font-size: 12px; color: #78350f;">(Will use "there" if name is missing in CSV)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3: Scheduling & Actions -->
+            <div class="wizard-card">
+              <div class="wizard-card-header">
+                <span class="step-number">3</span>
+                <div>
+                  <h3>Schedule & Launch</h3>
+                  <p>Set a date & time for Chrome alarm reminder, or start immediately.</p>
+                </div>
+              </div>
+
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label for="wizardBatchTitle">Campaign Title <span class="required">*</span></label>
+                  <input type="text" id="wizardBatchTitle" class="form-input" placeholder="e.g. Webinar Attendees Follow-up">
+                </div>
+
+                <div class="form-group">
+                  <div class="timing-header-bar">
+                    <label for="wizardScheduleTime">Scheduled Date & Time <span class="required">*</span></label>
+                    <div class="clock-sync-wrapper">
+                      <span id="wizardCurrentClock" class="clock-live-pill">🕒 Current: --:--</span>
+                      <button type="button" id="btnSyncWizardTime" class="btn-sync-time" title="Recalculate +5 mins from now">🔄 Sync +5m</button>
+                    </div>
+                  </div>
+
+                  <!-- Quick Timing Preset Pills for Batch Wizard -->
+                  <div class="timing-pills-row" id="wizardTimingPresets">
+                    <button type="button" class="btn-timing-preset active" data-wizard-preset="5m">⚡ In 5 Mins (Today)</button>
+                    <button type="button" class="btn-timing-preset" data-wizard-preset="15m">+ In 15 Mins</button>
+                    <button type="button" class="btn-timing-preset" data-wizard-preset="1h">+ In 1 Hour</button>
+                    <button type="button" class="btn-timing-preset" data-wizard-preset="today-6pm">Today 6:00 PM</button>
+                    <button type="button" class="btn-timing-preset" data-wizard-preset="tomorrow-10am">Tomorrow 10 AM</button>
+                    <button type="button" class="btn-timing-preset" data-wizard-preset="2d">In 2 Days</button>
+                  </div>
+
+                  <div class="timing-input-row">
+                    <input type="datetime-local" id="wizardScheduleTime" class="form-input flex-1">
+                    <span id="wizardScheduledDisplay" class="timing-badge">⏰ Starts in 5 mins</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pacing-setting-box">
+                <label class="checkbox-row">
+                  <input type="checkbox" id="wizardEnablePacing" checked>
+                  <span><strong>Safe Pacing Delay</strong> (Adds a 10-second breather between recipients to protect your WhatsApp account from being blocked)</span>
+                </label>
+              </div>
+
+              <!-- Active Batch Warning / Action near the end of the Wizard -->
+              <div id="wizardActiveBatchNotice" class="alert-banner alert-warning hidden" style="margin-top: 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1.5px solid #f59e0b; background: #fffbeb; border-radius: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span style="font-size: 20px;">⚡</span>
+                  <div>
+                    <strong style="color: #92400e; font-size: 14px;">A batch is currently in progress in your Side Bar:</strong>
+                    <div id="wizardActiveBatchTitle" style="color: #78350f; font-size: 13px; font-weight: 600;">"Campaign Title" (12/50 sent)</div>
+                  </div>
+                </div>
+                <button type="button" id="btnWizardEndActiveJob" class="btn btn-danger btn-sm" style="flex-shrink: 0; background: #ef4444; color: #fff; font-weight: 700; border: none; padding: 7px 14px; border-radius: 6px; cursor: pointer;">
+                  ⏹️ End the Job
+                </button>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="wizard-actions">
+                <button id="btnScheduleBatchSubmit" class="btn btn-primary btn-lg">
+                  ⏰ Schedule Batch
+                </button>
+                <button id="btnStartBatchNowSubmit" class="btn btn-success btn-lg">
+                  🚀 Start Sending Immediately
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wizard Right: Live WhatsApp Phone Preview -->
+          <div class="wizard-preview-sidebar">
+            <div class="phone-mockup">
+              <div class="phone-header">
+                <div class="phone-status-bar">
+                  <span>9:41</span>
+                  <span>WhatsApp</span>
+                  <span>100%</span>
+                </div>
+                <div class="wa-chat-header">
+                  <div class="wa-avatar">👤</div>
+                  <div class="wa-chat-info">
+                    <span id="previewContactName" class="wa-chat-name">Rahul Sharma</span>
+                    <span id="previewContactPhone" class="wa-chat-sub">+91 98765 43210</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="phone-body">
+                <div class="chat-date-pill">Today</div>
+                <div class="wa-chat-bubble-preview">
+                  <p id="liveBubbleText">Type a message or select a template to see live preview with real recipient data.</p>
+                  <span class="wa-time-tick">10:00 AM ✓✓</span>
+                </div>
+              </div>
+
+              <div class="preview-nav-bar">
+                <button id="btnPrevSample" class="btn-icon-sample" title="Previous Recipient">◀</button>
+                <span id="sampleIndexText">Previewing Recipient #1</span>
+                <button id="btnNextSample" class="btn-icon-sample" title="Next Recipient">▶</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB: QUICK 1-TO-1 FOLLOW-UP (DEFAULT ACTIVE)
+           ======================================================== -->
+      <section id="tab-quick-ping" class="tab-pane active">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>Quick 1-to-1 Follow-up</h2>
+              <p>Schedule a quick reminder to message a client, candidate, or friend on WhatsApp.</p>
+            </div>
+            <div class="page-top-actions">
+              <span class="page-top-clock live-clock-span">🕒 Today</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="quick-ping-container">
+          <div class="card max-w-650">
+            <!-- Dynamic Success / Alert Toast -->
+            <div id="quickToast" class="alert-banner alert-success hidden">
+              <div class="alert-icon">✅</div>
+              <div class="alert-text">
+                <strong id="quickToastTitle">Success!</strong>
+                <span id="quickToastMessage">Follow-up scheduled.</span>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="singleName">Contact Name <span class="required">*</span></label>
+                <input type="text" id="singleName" class="form-input" placeholder="e.g. Robin Sharma" value="">
+              </div>
+              <div class="form-group">
+                <label for="singlePhone">WhatsApp Phone Number <span class="required">*</span></label>
+                <input type="tel" id="singlePhone" class="form-input" placeholder="e.g. +91 91234 56789" value="">
+              </div>
+            </div>
+
+            <div class="form-group mt-3">
+              <label for="singleTemplateSelect">Template (Optional)</label>
+              <select id="singleTemplateSelect" class="form-select">
+                <option value="">-- Custom Message --</option>
+              </select>
+            </div>
+
+            <div class="form-group mt-3">
+              <div class="label-with-action">
+                <label for="singleMessage">Follow-up Message <span class="required">*</span></label>
+                <button type="button" id="btnSaveCurrentAsTemplate" class="link-btn" title="Save this text as a reusable template">
+                  💾 Save as Template
+                </button>
+              </div>
+              <textarea id="singleMessage" rows="5" class="form-textarea" placeholder="Hi {{name}}, checking in on our discussion from earlier this week. Let me know if you need any info!"></textarea>
+            </div>
+
+            <!-- Date & Time with Quick Presets -->
+            <div class="form-group mt-3">
+              <div class="timing-header-bar">
+                <label for="singleScheduledTime">When should PingLater remind you? <span class="required">*</span></label>
+                <div class="clock-sync-wrapper">
+                  <span id="singleCurrentClock" class="clock-live-pill">🕒 Current: --:--</span>
+                  <button type="button" id="btnSyncQuickTime" class="btn-sync-time" title="Recalculate +5 mins from now">🔄 Sync +5m</button>
+                </div>
+              </div>
+              
+              <!-- Quick Timing Preset Pills -->
+              <div class="timing-pills-row">
+                <button type="button" class="btn-timing-preset active" data-preset="5m">⚡ In 5 Mins (Today)</button>
+                <button type="button" class="btn-timing-preset" data-preset="15m">+ In 15 Mins</button>
+                <button type="button" class="btn-timing-preset" data-preset="1h">+ In 1 Hour</button>
+                <button type="button" class="btn-timing-preset" data-preset="today-6pm">Today 6:00 PM</button>
+                <button type="button" class="btn-timing-preset" data-preset="tomorrow-10am">Tomorrow 10 AM</button>
+                <button type="button" class="btn-timing-preset" data-preset="2d">In 2 Days</button>
+              </div>
+
+              <div class="timing-input-row">
+                <input type="datetime-local" id="singleScheduledTime" class="form-input flex-1">
+                <span id="singleScheduledDisplay" class="timing-badge">⏰ Starts in 5 mins</span>
+              </div>
+            </div>
+
+            <div class="quick-ping-actions mt-4">
+              <button type="button" id="btnSaveSingleFollowup" class="btn btn-primary btn-lg flex-1">
+                ⏰ Schedule 1-on-1 Follow-up
+              </button>
+              <button type="button" id="btnSendSingleNow" class="btn btn-outline btn-lg">
+                💬 Open in WhatsApp Now
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB: MESSAGE TEMPLATES MANAGER
+           ======================================================== -->
+      <section id="tab-templates" class="tab-pane">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>Message Templates Library</h2>
+              <p>Manage reusable message templates with dynamic placeholders for quick follow-ups.</p>
+            </div>
+            <div class="page-top-actions">
+              <button id="btnOpenNewTemplateModal" class="btn btn-primary btn-sm">+ Create New Template</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Template Filter Tabs -->
+        <div class="filter-pills" id="templateCategoryPills">
+          <button class="pill active" data-cat="all">All</button>
+          <button class="pill" data-cat="Events">Events</button>
+          <button class="pill" data-cat="Community">Community</button>
+          <button class="pill" data-cat="Sales & Clients">Sales & Clients</button>
+          <button class="pill" data-cat="General">General</button>
+        </div>
+
+        <div id="templatesListContainer" class="templates-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB: SETTINGS & BACKUP
+           ======================================================== -->
+      <section id="tab-settings" class="tab-pane">
+        <div class="page-top-banner">
+          <div class="page-top-accent-line"></div>
+          <div class="page-top-content">
+            <div class="page-top-titles">
+              <h2>Settings & Backup</h2>
+              <p>Configure phone number defaults, anti-ban pacing, audio cues, and export/import data.</p>
+            </div>
+            <div class="page-top-actions">
+              <span class="page-top-clock live-clock-span">🕒 Today</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="card">
+            <h3>General Preferences</h3>
+            <div class="form-group mt-3">
+              <label for="settingsDefaultCC">Default Country Code</label>
+              <select id="settingsDefaultCC" class="form-select">
+                <option value="91">🇮🇳 India (+91)</option>
+                <option value="1">🇺🇸 US / Canada (+1)</option>
+                <option value="44">🇬🇧 United Kingdom (+44)</option>
+                <option value="971">🇦🇪 UAE (+971)</option>
+                <option value="65">🇸🇬 Singapore (+65)</option>
+                <option value="61">🇦🇺 Australia (+61)</option>
+              </select>
+              <span class="field-hint">Used automatically when imported CSVs have 10-digit numbers without a prefix.</span>
+            </div>
+
+            <div class="form-group mt-3">
+              <label for="settingsPacingSeconds">Default Safe Pacing Delay (Seconds)</label>
+              <input type="number" id="settingsPacingSeconds" min="1" max="30" value="4" class="form-input">
+              <span class="field-hint">Delay between recipients in the Side Panel to keep your account safe from rate-limits.</span>
+            </div>
+
+            <div class="checkbox-group mt-3">
+              <label class="checkbox-row">
+                <input type="checkbox" id="settingsSoundEnabled" checked>
+                <span>Play Chime Sound when next contact is ready</span>
+              </label>
+              <button id="btnSettingsTestChime" class="btn btn-outline btn-sm mt-1">🔔 Test Chime Sound</button>
+            </div>
+
+            <div class="checkbox-group mt-3">
+              <label class="checkbox-row">
+                <input type="checkbox" id="settingsAutoLoadNext" checked>
+                <span>Automatically update WhatsApp Web tab when stepping to next contact</span>
+              </label>
+            </div>
+
+            <button id="btnSaveGeneralSettings" class="btn btn-primary mt-4">Save Settings</button>
+          </div>
+
+          <div class="card">
+            <h3>Data Backup & Privacy</h3>
+            <p class="card-desc">PingLater stores 100% of your data locally in your Chrome browser. You can export or restore anytime.</p>
+            
+            <div class="backup-actions mt-3">
+              <button id="btnExportAllData" class="btn btn-outline full-width">
+                📥 Export Complete Backup (JSON)
+              </button>
+              
+              <div class="import-box mt-2">
+                <input type="file" id="importBackupInput" accept=".json" class="file-input-hidden">
+                <button id="btnTriggerImport" class="btn btn-outline full-width">
+                  📤 Restore from Backup (JSON)
+                </button>
+              </div>
+
+              <div class="danger-zone mt-4">
+                <h4>Danger Zone</h4>
+                <p>Erase all batches, templates, and contact history from your local storage.</p>
+                <button id="btnClearAllData" class="btn btn-danger btn-sm mt-2">
+                  ⚠️ Clear All Stored Data
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Template Editor -->
+  <div id="templateModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="templateModalTitle">Create Message Template</h3>
+        <button id="btnCloseTemplateModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editTemplateId">
+        <div class="form-group">
+          <label for="templateTitleInput">Template Name <span class="required">*</span></label>
+          <input type="text" id="templateTitleInput" class="form-input" placeholder="e.g. Webinar Pass Confirmation">
+        </div>
+
+        <div class="form-group">
+          <label for="templateCategoryInput">Category</label>
+          <select id="templateCategoryInput" class="form-select">
+            <option value="Events">Events</option>
+            <option value="Community">Community</option>
+            <option value="Sales & Clients">Sales & Clients</option>
+            <option value="General">General</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="templateBodyInput">Message Body <span class="required">*</span></label>
+          <div class="modal-pills-row">
+            <span class="pill-var" data-tpl-var="name">+ {{name}}</span>
+            <span class="pill-var" data-tpl-var="event">+ {{event}}</span>
+            <span class="pill-var" data-tpl-var="link">+ {{link}}</span>
+            <span class="pill-var" data-tpl-var="date">+ {{date}}</span>
+          </div>
+          <textarea id="templateBodyInput" rows="6" class="form-textarea" placeholder="Hi {{name}}, your pass for {{event}} is confirmed! Link: {{link}}"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelTemplateModal" class="btn btn-outline">Cancel</button>
+        <button id="btnSaveTemplateModal" class="btn btn-primary">Save Template</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Schedule & Batch -->
+  <div id="editScheduleModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="editScheduleModalTitle">✏️ Edit Schedule & Follow-up</h3>
+        <button id="btnCloseEditScheduleModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editScheduleBatchId">
+        
+        <div class="form-group">
+          <label for="editBatchTitleInput">Follow-up / Campaign Title</label>
+          <input type="text" id="editBatchTitleInput" class="form-input">
+        </div>
+
+        <div class="form-group">
+          <label for="editScheduleTimeInput">Scheduled Date & Time <span class="required">*</span></label>
+          <div class="timing-pills-row">
+            <button type="button" class="btn-timing-preset" data-edit-preset="15m">In 15 Mins</button>
+            <button type="button" class="btn-timing-preset" data-edit-preset="1h">+ 1 Hour</button>
+            <button type="button" class="btn-timing-preset" data-edit-preset="tomorrow-10am">Tomorrow 10 AM</button>
+            <button type="button" class="btn-timing-preset" data-edit-preset="2d">In 2 Days</button>
+          </div>
+          <input type="datetime-local" id="editScheduleTimeInput" class="form-input">
+          <span id="editScheduleTimeDisplay" class="timing-badge mt-1">⏰ Scheduled for...</span>
+        </div>
+
+        <div class="form-group">
+          <label for="editBatchMessageInput">Message</label>
+          <textarea id="editBatchMessageInput" rows="5" class="form-textarea"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelEditScheduleModal" class="btn btn-outline">Cancel</button>
+        <button id="btnSaveEditScheduleModal" class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: View & Export Skipped Recipients -->
+  <div id="skippedRecipientsModal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 id="skippedModalTitle">⚠️ Skipped Contacts in Batch</h3>
+        <button id="btnCloseSkippedModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description" style="color: #64748b; font-size: 14px; margin-bottom: 14px;">
+          These phone numbers were skipped during the campaign (e.g. not on WhatsApp or manually skipped). You can export them as a CSV to reach out via SMS, Email, or LinkedIn.
+        </p>
+        <div class="skipped-table-wrapper" style="max-height: 320px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <table class="preview-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background: #f8fafc; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                <th style="padding: 10px 14px; font-size: 13px;">#</th>
+                <th style="padding: 10px 14px; font-size: 13px;">Contact Name</th>
+                <th style="padding: 10px 14px; font-size: 13px;">Phone Number</th>
+                <th style="padding: 10px 14px; font-size: 13px;">Reason / Status</th>
+              </tr>
+            </thead>
+            <tbody id="skippedTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between;">
+        <button id="btnCloseSkippedModalBtn" class="btn btn-outline">Close</button>
+        <button id="btnExportSkippedCSV" class="btn btn-primary">📥 Export Skipped CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Animated CSV Upload Confirmation Toast -->
+  <div id="uploadSuccessToast" class="upload-toast hidden">
+    <div class="upload-toast-icon">🎉</div>
+    <div class="upload-toast-content">
+      <h4 id="uploadToastTitle">CSV Uploaded Successfully!</h4>
+      <p id="uploadToastDesc">39 contacts extracted (39 valid, 0 invalid)</p>
+    </div>
+    <button id="btnCloseUploadToast" class="upload-toast-close">&times;</button>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

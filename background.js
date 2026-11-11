@@ -1,0 +1,274 @@
+/**
+ * PingLater - Background Service Worker (Module 4)
+ * Handles Chrome alarms, overdue detection, system notifications,
+ * toolbar badge management, and side panel opening.
+ */
+
+import { StorageService, BATCH_STATUS } from './utils/storage.js';
+
+const WATCHDOG_ALARM_NAME = 'pinglater_watchdog';
+
+// ==========================================
+// LIFECYCLE HOOKS
+// ==========================================
+
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log('[PingLater] Extension installed/updated:', details.reason);
+  await StorageService.initDefaults();
+
+  // Configure Side Panel behavior: open side panel on toolbar action click
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
+      console.warn('[PingLater] Could not set openPanelOnActionClick:', err);
+    });
+  }
+
+  // Set up periodic watchdog to detect overdue batches (every 5 minutes)
+  chrome.alarms.create(WATCHDOG_ALARM_NAME, { periodInMinutes: 5 });
+
+  await checkOverdueAndRefreshBadge();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('[PingLater] Chrome browser startup');
+  await checkOverdueAndRefreshBadge();
+});
+
+// ==========================================
+// TOOLBAR ACTION CLICK -> OPEN REAL SIDE PANEL
+// ==========================================
+chrome.action.onClicked.addListener(async (tab) => {
+  if (chrome.sidePanel && chrome.sidePanel.open) {
+    try {
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+    } catch (e) {
+      console.warn('[PingLater] Error opening side panel on click:', e);
+    }
+  }
+});
+
+// ==========================================
+// ALARM LISTENER
+// ==========================================
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  console.log('[PingLater] Alarm triggered:', alarm.name);
+
+  if (alarm.name === WATCHDOG_ALARM_NAME) {
+    await checkOverdueAndRefreshBadge();
+    return;
+  }
+
+  if (alarm.name.startsWith('batch_')) {
+    const batchId = alarm.name;
+    await triggerBatchDue(batchId);
+  }
+});
+
+/**
+ * Handles a batch whose scheduled time has arrived.
+ */
+async function triggerBatchDue(batchId) {
+  const batch = await StorageService.getBatchById(batchId);
+  if (!batch || batch.status === BATCH_STATUS.COMPLETED || batch.status === BATCH_STATUS.CANCELLED) {
+    return;
+  }
+
+  // Mark status as in_progress / due
+  await StorageService.updateBatch(batchId, {
+    status: BATCH_STATUS.IN_PROGRESS
+  });
+
+  const total = batch.recipients ? batch.recipients.length : 0;
+  const remaining = batch.recipients ? batch.recipients.filter((r) => r.status === 'pending').length : 0;
+
+  // Show rich Chrome system notification
+  const notificationId = `notif_${batchId}`;
+  chrome.notifications.create(notificationId, {
+    type: 'basic',
+    iconUrl: 'assets/icons/icon128.png',
+    title: `🔔 PingLater: "${batch.title}" is ready!`,
+    message: `${remaining} follow-up(s) ready to review & send. Click to open sending workspace.`,
+    priority: 2,
+    requireInteraction: true
+  });
+
+  await checkOverdueAndRefreshBadge();
+}
+
+// ==========================================
+// NOTIFICATION CLICKS
+// ==========================================
+
+chrome.notifications.onClicked.addListener(async (notificationId) => {
+  console.log('[PingLater] Notification clicked:', notificationId);
+  chrome.notifications.clear(notificationId);
+
+  // Extract batchId if present
+  let targetBatchId = null;
+  if (notificationId.startsWith('notif_batch_')) {
+    targetBatchId = notificationId.replace('notif_', '');
+  }
+
+  // Open Side Panel and activate/open WhatsApp Web
+  await openSendingWorkspace(targetBatchId);
+});
+
+/**
+ * Opens Side Panel and ensures WhatsApp Web is open/focused in the current window.
+ */
+async function openSendingWorkspace(batchId = null) {
+  try {
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const windowId = currentTab ? currentTab.windowId : undefined;
+
+    // Open side panel if API is available
+    if (chrome.sidePanel && chrome.sidePanel.open && windowId) {
+      await chrome.sidePanel.open({ windowId });
+    }
+
+    // Check if WhatsApp Web tab is already open
+    const waTabs = await chrome.tabs.query({ url: '*://web.whatsapp.com/*' });
+    if (waTabs.length > 0) {
+      await chrome.tabs.update(waTabs[0].id, { active: true });
+    } else {
+      // Open WhatsApp Web in a tab
+      await chrome.tabs.create({ url: 'https://web.whatsapp.com', active: true });
+    }
+
+    // Notify sidepanel about the active batch if specified
+    if (batchId) {
+      setTimeout(() => {
+        chrome.runtime.sendMessage({ type: 'LOAD_BATCH_IN_SIDEPANEL', batchId }).catch(() => {});
+      }, 500);
+    }
+  } catch (err) {
+    console.error('[PingLater] Failed to open workspace:', err);
+  }
+}
+
+// ==========================================
+// OVERDUE DETECTOR & BADGE MANAGER
+// ==========================================
+
+export async function checkOverdueAndRefreshBadge() {
+  const batches = await StorageService.getBatches();
+  const now = Date.now();
+
+  let overdueCount = 0;
+  let activePendingCount = 0;
+
+  for (const b of batches) {
+    if (b.status === BATCH_STATUS.COMPLETED || b.status === BATCH_STATUS.CANCELLED) {
+      continue;
+    }
+
+    const scheduledTime = new Date(b.scheduledAt).getTime();
+    const isPast = scheduledTime <= now;
+
+    if (b.status === BATCH_STATUS.SCHEDULED && isPast) {
+      // Has passed scheduled time: mark as overdue
+      await StorageService.updateBatch(b.id, { status: BATCH_STATUS.OVERDUE });
+      overdueCount++;
+    } else if (b.status === BATCH_STATUS.OVERDUE) {
+      overdueCount++;
+    } else if (b.status === BATCH_STATUS.IN_PROGRESS || b.status === BATCH_STATUS.PAUSED) {
+      const pending = (b.recipients || []).filter((r) => r.status === 'pending').length;
+      activePendingCount += pending;
+    }
+  }
+
+  // Update Toolbar Badge
+  if (overdueCount > 0) {
+    chrome.action.setBadgeText({ text: String(overdueCount) });
+    chrome.action.setBadgeBackgroundColor({ color: '#E53E3E' }); // Red for overdue
+    chrome.action.setTitle({ title: `PingLater: ${overdueCount} overdue follow-up batch(es)!` });
+  } else if (activePendingCount > 0) {
+    chrome.action.setBadgeText({ text: String(activePendingCount) });
+    chrome.action.setBadgeBackgroundColor({ color: '#25D366' }); // Green for active messages
+    chrome.action.setTitle({ title: `PingLater: ${activePendingCount} pending follow-up(s)` });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+    chrome.action.setTitle({ title: 'PingLater: Never forget a follow-up' });
+  }
+
+  return { overdueCount, activePendingCount };
+}
+
+// ==========================================
+// MESSAGE ROUTER
+// ==========================================
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || !message.type) return;
+
+  switch (message.type) {
+    case 'SCHEDULE_BATCH': {
+      const { batchId, scheduledAt } = message;
+      const targetTime = new Date(scheduledAt).getTime();
+
+      if (!isNaN(targetTime)) {
+        const delayMs = targetTime - Date.now();
+        if (delayMs <= 0) {
+          // Trigger immediately
+          triggerBatchDue(batchId);
+        } else {
+          // Schedule Chrome alarm
+          chrome.alarms.create(batchId, { when: targetTime });
+          console.log(`[PingLater] Scheduled alarm for ${batchId} at ${new Date(targetTime).toLocaleTimeString()}`);
+        }
+      }
+
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'CANCEL_BATCH_ALARM': {
+      const { batchId } = message;
+      chrome.alarms.clear(batchId);
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'BATCH_COMPLETED': {
+      if (message.batchId) {
+        chrome.alarms.clear(message.batchId);
+      }
+      checkOverdueAndRefreshBadge();
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'REFRESH_BADGE': {
+      checkOverdueAndRefreshBadge().then((res) => sendResponse(res));
+      return true; // async sendResponse
+    }
+
+    case 'OPEN_WORKSPACE': {
+      openSendingWorkspace(message.batchId).then(() => sendResponse({ success: true }));
+      return true;
+    }
+
+    case 'CLOSE_WHATSAPP_TABS': {
+      chrome.tabs.query({ url: '*://web.whatsapp.com/*' }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          const ids = tabs.map((t) => t.id).filter(Boolean);
+          chrome.tabs.remove(ids).catch(() => {});
+        }
+      });
+      sendResponse({ success: true });
+      break;
+    }
+
+    case 'OPEN_DASHBOARD': {
+      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+      sendResponse({ success: true });
+      break;
+    }
+
+    default:
+      break;
+  }
+});
