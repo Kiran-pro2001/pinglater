@@ -4,9 +4,9 @@ Thumbs.db
 node_modules/
 .vscode/
 .idea/
-*.crx
-*.zip
 dist/
 build/
+*.crx
+*.zip
 .env
 .env.local
