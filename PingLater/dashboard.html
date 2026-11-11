@@ -206,6 +206,7 @@
               <div class="tab-subnav">
                 <button type="button" id="btnModeCSV" class="subnav-btn active">CSV File Upload</button>
                 <button type="button" id="btnModePaste" class="subnav-btn">Paste Numbers / Names</button>
+                <button type="button" id="btnModeSheets" class="subnav-btn">📊 Google Sheets Live Sync</button>
               </div>
 
               <!-- CSV Dropzone -->
@@ -242,7 +243,71 @@
               <div id="pasteArea" class="paste-container hidden">
                 <label for="rawPasteText">Paste name and phone number per line:</label>
                 <textarea id="rawPasteText" rows="5" placeholder="Robin Sharma, 9123456789&#10;Alex Rivera, +91 9876500000&#10;Jordan Lee, 9998887770"></textarea>
-                <button id="btnProcessPaste" class="btn btn-secondary btn-sm mt-2">Process Pasted Text</button>
+                <button type="button" id="btnProcessPaste" class="btn btn-secondary btn-sm mt-2">Process Pasted Text</button>
+              </div>
+
+              <!-- Google Sheets Live 2-Way Sync Area (Feature 4) -->
+              <div id="sheetsSyncArea" class="sheets-sync-container hidden" style="margin-top: 14px; display: flex; flex-direction: column; gap: 12px; background: #F8FAFC; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 20px;">📊</span>
+                    <div>
+                      <strong style="color: #0F172A; font-size: 14px;">Google Sheets 2-Way Sync</strong>
+                      <div style="font-size: 12px; color: #64748B;">Auto-pull leads and write back "Sent" / "Skipped" statuses in real-time.</div>
+                    </div>
+                  </div>
+                  <span class="badge" style="background: #DCFCE7; color: #15803D; font-weight: 800; font-size: 11px;">PRO FEATURE</span>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="googleSheetUrlInput" style="font-size: 12.5px; font-weight: 700; color: #334155;">Google Sheet Share Link</label>
+                  <div style="display: flex; gap: 8px; margin-top: 4px;">
+                    <input type="url" id="googleSheetUrlInput" class="form-input" placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5n.../edit?usp=sharing" style="flex: 1;">
+                    <button type="button" id="btnFetchGoogleSheet" class="btn btn-primary" style="flex-shrink: 0;">
+                      📥 Fetch Sheet
+                    </button>
+                  </div>
+                  <span style="font-size: 11px; color: #64748B; margin-top: 4px; display: block;">
+                    Make sure link sharing is set to <em>"Anyone with the link can view"</em>.
+                  </span>
+                </div>
+
+                <!-- 2-Way Writeback Toggle & Webhook Config -->
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px;">
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; font-size: 13px; color: #0F172A;">
+                    <input type="checkbox" id="chkEnable2WayWriteback" style="accent-color: #22C55E; width: 16px; height: 16px; cursor: pointer;" checked>
+                    <span>Enable 2-Way Writeback (Update Sheet Status when sent)</span>
+                  </label>
+                  <p style="font-size: 11.5px; color: #64748B; margin: 4px 0 8px 24px;">
+                    When you click "Mark Sent" in PingLater, it automatically updates columns <strong>Status</strong> (&rarr; "Sent") and <strong>Sent At</strong> in your Google Sheet.
+                  </p>
+
+                  <div id="webhookConfigSection" style="margin-left: 24px;">
+                    <label for="googleWebhookUrlInput" style="font-size: 12px; font-weight: 600; color: #475569;">Google Apps Script Webhook URL (Optional for Writeback)</label>
+                    <input type="url" id="googleWebhookUrlInput" class="form-input" placeholder="https://script.google.com/macros/s/.../exec" style="margin-top: 4px;">
+                    
+                    <!-- Expandable 30s Setup Guide -->
+                    <details style="margin-top: 8px; font-size: 12px; color: #475569; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 8px 12px;">
+                      <summary style="cursor: pointer; font-weight: 700; color: #15803D;">📖 30-Second Webhook Setup Instructions (Click to expand)</summary>
+                      <ol style="margin: 8px 0 8px 18px; padding: 0; line-height: 1.5;">
+                        <li>In your Google Sheet, click <strong>Extensions &gt; Apps Script</strong>.</li>
+                        <li>Delete any code there and paste the snippet below:</li>
+                      </ol>
+                      <div style="position: relative;">
+                        <textarea id="appsScriptCodeSnippet" readonly rows="6" style="width: 100%; font-family: monospace; font-size: 11px; background: #1E293B; color: #F8FAFC; border-radius: 6px; padding: 8px; border: none; resize: vertical;"></textarea>
+                        <button type="button" id="btnCopyAppsScript" class="btn btn-outline btn-sm" style="position: absolute; top: 6px; right: 6px; background: #FFFFFF; font-size: 10.5px;">📋 Copy Script</button>
+                      </div>
+                      <ol start="3" style="margin: 8px 0 0 18px; padding: 0; line-height: 1.5;">
+                        <li>Click <strong>Deploy &gt; New deployment &gt; Select type: Web app</strong>.</li>
+                        <li>Set <em>"Who has access"</em> to <strong>Anyone</strong>, then click <strong>Deploy</strong>.</li>
+                        <li>Copy the Web app URL and paste it into the box above!</li>
+                      </ol>
+                    </details>
+                  </div>
+                </div>
+
+                <!-- Live Sync Status Banner -->
+                <div id="sheetsSyncStatusBanner" class="hidden" style="padding: 8px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px;"></div>
               </div>
 
               <!-- Ingestion Report & Column Mapping (Revealed after file upload) -->

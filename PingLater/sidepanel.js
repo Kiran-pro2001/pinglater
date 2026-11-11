@@ -8,6 +8,7 @@ import { StorageService, BATCH_STATUS, RECIPIENT_STATUS, SNOOZE_STATUS } from '.
 import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
 import { calculateNextRecurringDate, formatRecurrenceSummary } from './utils/recurring.js';
+import { writeBackToGoogleSheet } from './utils/sheets.js';
 
 // Application State
 let currentBatch = null;
@@ -470,6 +471,16 @@ async function handleMarkSent() {
     }).catch((err) => console.warn('[PingLater] Could not auto-snooze:', err));
   }
 
+  // Google Sheets 2-Way Writeback (Feature 4)
+  if (currentBatch.sheetSync && currentBatch.sheetSync.twoWaySyncEnabled && currentBatch.sheetSync.webhookUrl && currentRecipient) {
+    writeBackToGoogleSheet(currentBatch.sheetSync.webhookUrl, {
+      phone: currentRecipient.phone,
+      name: currentRecipient.name,
+      status: 'Sent',
+      sentAt: new Date().toLocaleString()
+    }).catch((err) => console.warn('[PingLater] Sheet writeback error:', err));
+  }
+
   // Reload batch state
   currentBatch = await StorageService.getBatchById(currentBatch.id);
 
@@ -486,11 +497,23 @@ async function handleSkip() {
   if (isPacing || !currentBatch) return;
 
   const idx = currentBatch.currentIndex || 0;
+  const skippedRecipient = currentBatch.recipients ? currentBatch.recipients[idx] : null;
+
   await StorageService.updateBatchRecipient(currentBatch.id, idx, {
     status: RECIPIENT_STATUS.SKIPPED,
     skipReason: 'Manually skipped by user',
     skippedAt: new Date().toISOString()
   });
+
+  // Google Sheets 2-Way Writeback for Skipped (Feature 4)
+  if (currentBatch.sheetSync && currentBatch.sheetSync.twoWaySyncEnabled && currentBatch.sheetSync.webhookUrl && skippedRecipient) {
+    writeBackToGoogleSheet(currentBatch.sheetSync.webhookUrl, {
+      phone: skippedRecipient.phone,
+      name: skippedRecipient.name,
+      status: 'Skipped',
+      sentAt: new Date().toLocaleString()
+    }).catch((err) => console.warn('[PingLater] Sheet writeback error:', err));
+  }
 
   currentBatch = await StorageService.getBatchById(currentBatch.id);
 

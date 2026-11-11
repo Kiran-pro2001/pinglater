@@ -36,7 +36,10 @@
     "unlimitedStorage"
   ],
   "host_permissions": [
-    "*://web.whatsapp.com/*"
+    "*://web.whatsapp.com/*",
+    "https://docs.google.com/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
   ],
   "content_scripts": [
     {

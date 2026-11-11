@@ -10,6 +10,7 @@ import { extractVariables, renderTemplate, validateBatchVariables, renderBatchRe
 import { WhatsAppOrchestrator } from './utils/whatsapp.js';
 import { SoundPlayer } from './utils/audio.js';
 import { calculateNextRecurringDate, calculateTotalCycles, formatRecurrenceSummary, RECURRING_FREQUENCY } from './utils/recurring.js';
+import { fetchGoogleSheetCsv, writeBackToGoogleSheet, GOOGLE_APPS_SCRIPT_TEMPLATE } from './utils/sheets.js';
 
 // Application State
 let currentTab = 'tab-quick-ping';
@@ -22,6 +23,7 @@ let wizardRawRows = [];
 let wizardHeaders = [];
 let wizardProcessedRecipients = [];
 let wizardSampleIndex = 0;
+let currentWizardSheetSync = null;
 
 // ==========================================
 // INITIALIZATION
@@ -277,6 +279,7 @@ function renderBatchesGrid() {
       <div class="card-top-row">
         <h3 class="card-title">${escapeHtml(batch.title || 'Untitled Follow-up')}</h3>
         <div style="display:flex; gap:6px; align-items:center;">
+          ${batch.sheetSync ? `<span class="badge-sheets-synced" title="Connected to Google Sheet">📊 Sheets Synced</span>` : ''}
           ${recurringBadge}
           <span class="badge badge-${batch.status}">${batch.status.replace('_', ' ')}</span>
         </div>
@@ -290,8 +293,6 @@ function renderBatchesGrid() {
         <span>${isRec ? `Next: ${scheduledDateStr}` : scheduledDateStr}</span>
         <span>•</span>
         <span>${isRec ? `Day ${batch.recurringConfig.currentCycle || 1} of ${batch.recurringConfig.totalCycles || '?'}` : `${total} Recipient${total !== 1 ? 's' : ''}`}</span>
-      </div>
-        <span>${total} Recipient${total !== 1 ? 's' : ''}</span>
       </div>
 
       <div class="batch-progress-bar">
@@ -309,6 +310,11 @@ function renderBatchesGrid() {
           ▶ Open Workspace
         </button>
         <div class="card-actions-secondary">
+          ${batch.sheetSync ? `
+          <button type="button" class="btn btn-outline btn-sm btn-resync-sheet" data-id="${batch.id}" title="Pull latest contacts from Google Sheet">
+            🔄 Re-sync
+          </button>
+          ` : ''}
           ${skipped > 0 ? `
           <button type="button" class="btn btn-warning btn-sm btn-view-skipped" data-id="${batch.id}" title="View and Export ${skipped} Skipped Contacts">
             ⚠️ Skipped (${skipped})
@@ -330,6 +336,57 @@ function renderBatchesGrid() {
     // Start / Resume button
     card.querySelector('.btn-start-batch').addEventListener('click', () => {
       openBatchInSidePanel(batch.id);
+    });
+
+    // Re-sync with Google Sheet (Feature 4)
+    card.querySelector('.btn-resync-sheet')?.addEventListener('click', async () => {
+      const btn = card.querySelector('.btn-resync-sheet');
+      if (btn) btn.textContent = '⏳ Syncing...';
+      try {
+        const res = await fetchGoogleSheetCsv(batch.sheetSync.sheetUrl);
+        const parsed = parseCSV(res.csvText);
+        const existingPhones = new Set((batch.recipients || []).map((r) => String(r.phone).replace(/\D/g, '')));
+
+        let addedCount = 0;
+        const newRecipients = [];
+        const colMap = autoDetectColumns(parsed.headers);
+
+        parsed.rows.forEach((row, i) => {
+          const rawPhone = row[colMap.phoneCol] || row['Phone'] || row['Mobile'] || '';
+          const norm = normalizePhoneNumber(rawPhone, currentSettings?.defaultCountryCode || '91');
+          if (norm.isValid && !existingPhones.has(norm.formatted)) {
+            existingPhones.add(norm.formatted);
+            const name = row[colMap.nameCol] || row['Name'] || `Contact ${i + 1}`;
+            const renderedMsg = renderTemplate(batch.templateBody, { ...row, name, phone: norm.formatted });
+            newRecipients.push({
+              name,
+              phone: norm.formatted,
+              rawPhone,
+              status: RECIPIENT_STATUS.PENDING,
+              customFields: row,
+              renderedMessage: renderedMsg
+            });
+            addedCount++;
+          }
+        });
+
+        if (addedCount > 0) {
+          batch.recipients = [...(batch.recipients || []), ...newRecipients];
+          batch.sheetSync.lastSyncedAt = new Date().toISOString();
+          await StorageService.updateBatch(batch.id, {
+            recipients: batch.recipients,
+            sheetSync: batch.sheetSync
+          });
+          alert(`🎉 Re-synced successfully! Added ${addedCount} new contact(s) from your Google Sheet.`);
+          refreshBatchesList();
+        } else {
+          alert('✓ Your batch is already up to date with the Google Sheet. No new contacts found.');
+          if (btn) btn.textContent = '🔄 Re-sync';
+        }
+      } catch (err) {
+        alert('Could not sync with Google Sheet: ' + err.message);
+        refreshBatchesList();
+      }
     });
 
     // View Skipped Contacts button
@@ -390,15 +447,19 @@ function setupWizardTab() {
   const fileInput = document.getElementById('csvFileInput');
   const btnModeCSV = document.getElementById('btnModeCSV');
   const btnModePaste = document.getElementById('btnModePaste');
+  const btnModeSheets = document.getElementById('btnModeSheets');
   const pasteArea = document.getElementById('pasteArea');
+  const sheetsSyncArea = document.getElementById('sheetsSyncArea');
   const btnProcessPaste = document.getElementById('btnProcessPaste');
   const rawPasteText = document.getElementById('rawPasteText');
 
-  // Mode switching (CSV vs Paste)
+  // Mode switching (CSV vs Paste vs Google Sheets)
   btnModeCSV.addEventListener('click', () => {
     btnModeCSV.classList.add('active');
     btnModePaste.classList.remove('active');
+    btnModeSheets?.classList.remove('active');
     pasteArea.classList.add('hidden');
+    sheetsSyncArea?.classList.add('hidden');
     const fileCard = document.getElementById('uploadedFileCard');
     if (fileCard && !fileCard.classList.contains('hidden')) {
       dropzone.classList.add('hidden');
@@ -410,9 +471,126 @@ function setupWizardTab() {
   btnModePaste.addEventListener('click', () => {
     btnModePaste.classList.add('active');
     btnModeCSV.classList.remove('active');
+    btnModeSheets?.classList.remove('active');
     dropzone.classList.add('hidden');
+    sheetsSyncArea?.classList.add('hidden');
     document.getElementById('uploadedFileCard')?.classList.add('hidden');
     pasteArea.classList.remove('hidden');
+  });
+
+  btnModeSheets?.addEventListener('click', () => {
+    btnModeSheets.classList.add('active');
+    btnModeCSV.classList.remove('active');
+    btnModePaste.classList.remove('active');
+    dropzone.classList.add('hidden');
+    pasteArea.classList.add('hidden');
+    document.getElementById('uploadedFileCard')?.classList.add('hidden');
+    sheetsSyncArea?.classList.remove('hidden');
+  });
+
+  // Initialize Apps Script snippet
+  const appsScriptEl = document.getElementById('appsScriptCodeSnippet');
+  if (appsScriptEl) {
+    appsScriptEl.value = GOOGLE_APPS_SCRIPT_TEMPLATE;
+  }
+
+  // Copy Apps Script button
+  const btnCopyScript = document.getElementById('btnCopyAppsScript');
+  btnCopyScript?.addEventListener('click', () => {
+    navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_TEMPLATE);
+    btnCopyScript.textContent = '✓ Copied!';
+    setTimeout(() => {
+      btnCopyScript.textContent = '📋 Copy Script';
+    }, 2500);
+  });
+
+  // Toggle webhook config section based on checkbox
+  const chk2Way = document.getElementById('chkEnable2WayWriteback');
+  const webhookSection = document.getElementById('webhookConfigSection');
+  chk2Way?.addEventListener('change', () => {
+    if (webhookSection) {
+      webhookSection.style.display = chk2Way.checked ? 'block' : 'none';
+    }
+  });
+
+  // Fetch Google Sheet button
+  const btnFetchSheet = document.getElementById('btnFetchGoogleSheet');
+  btnFetchSheet?.addEventListener('click', async () => {
+    const urlInput = document.getElementById('googleSheetUrlInput');
+    const webhookInput = document.getElementById('googleWebhookUrlInput');
+    const statusBanner = document.getElementById('sheetsSyncStatusBanner');
+    const sheetUrl = (urlInput?.value || '').trim();
+    const webhookUrl = (webhookInput?.value || '').trim();
+    const is2Way = chk2Way?.checked || false;
+
+    if (!sheetUrl) {
+      alert('Please paste your Google Sheet share link.');
+      urlInput?.focus();
+      return;
+    }
+
+    try {
+      btnFetchSheet.disabled = true;
+      btnFetchSheet.textContent = '⏳ Fetching...';
+      if (statusBanner) {
+        statusBanner.className = 'sheets-sync-status-success';
+        statusBanner.textContent = 'Connecting to Google Sheets...';
+        statusBanner.classList.remove('hidden');
+      }
+
+      const res = await fetchGoogleSheetCsv(sheetUrl);
+      const parsed = parseCSV(res.csvText);
+
+      if (!parsed.rows || parsed.rows.length === 0) {
+        throw new Error('No contact rows found in this Google Sheet.');
+      }
+
+      // Show Uploaded File Card in Step 1
+      const fileCard = document.getElementById('uploadedFileCard');
+      const dropzoneArea = document.getElementById('dropzoneArea');
+      const fileNameDisplay = document.getElementById('uploadedFileNameDisplay');
+      const fileDetailsDisplay = document.getElementById('uploadedFileDetails');
+      if (fileCard && dropzoneArea && fileNameDisplay && fileDetailsDisplay) {
+        fileNameDisplay.textContent = `📊 Google Sheet (${res.sheetId.slice(0, 10)}...)`;
+        fileDetailsDisplay.textContent = `${parsed.rows.length} contacts parsed • Live 2-Way Sync Enabled`;
+        dropzoneArea.classList.add('hidden');
+        sheetsSyncArea?.classList.add('hidden');
+        fileCard.classList.remove('hidden');
+      }
+
+      // Auto-fill campaign title if empty
+      const titleInput = document.getElementById('wizardBatchTitle');
+      if (titleInput && !titleInput.value) {
+        titleInput.value = `Google Sheet Campaign (${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })})`;
+      }
+
+      currentWizardSheetSync = {
+        sheetUrl,
+        sheetId: res.sheetId,
+        gid: res.gid,
+        webhookUrl: is2Way ? webhookUrl : '',
+        twoWaySyncEnabled: is2Way && Boolean(webhookUrl),
+        lastSyncedAt: new Date().toISOString()
+      };
+
+      if (statusBanner) {
+        statusBanner.className = 'sheets-sync-status-success';
+        statusBanner.textContent = `✓ Successfully loaded ${parsed.rows.length} contacts from Google Sheet!`;
+      }
+
+      handleParsedRows(parsed.headers, parsed.rows);
+    } catch (err) {
+      console.error('[PingLater] Google Sheet fetch error:', err);
+      if (statusBanner) {
+        statusBanner.className = 'sheets-sync-status-error';
+        statusBanner.textContent = `❌ ${err.message}`;
+        statusBanner.classList.remove('hidden');
+      }
+      alert('Error fetching Google Sheet: ' + err.message);
+    } finally {
+      btnFetchSheet.disabled = false;
+      btnFetchSheet.textContent = '📥 Fetch Sheet';
+    }
   });
 
   // Top CSV Confirmation Banner OK button
@@ -873,10 +1051,12 @@ async function submitWizardBatch(startImmediately = false) {
       currentIndex: 0,
       scheduledAt,
       pacingSeconds,
-      status: startImmediately ? BATCH_STATUS.IN_PROGRESS : BATCH_STATUS.SCHEDULED
+      status: startImmediately ? BATCH_STATUS.IN_PROGRESS : BATCH_STATUS.SCHEDULED,
+      ...(currentWizardSheetSync ? { sheetSync: currentWizardSheetSync } : {})
     };
 
     const saved = await StorageService.saveBatch(newBatch);
+    currentWizardSheetSync = null;
 
     if (startImmediately) {
       // Open in Side Panel right now!
