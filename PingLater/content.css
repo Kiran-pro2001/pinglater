@@ -464,20 +464,22 @@
    =================================================== */
 
 .pinglater-chatlist-badge {
+  position: absolute !important;
+  right: 12px !important;
+  bottom: 10px !important;
+  z-index: 99 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
   font-size: 10.5px !important;
   font-weight: 700 !important;
   padding: 2px 7px !important;
   border-radius: 8px !important;
-  margin-left: 6px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 5px !important;
-  white-space: nowrap !important;
-  vertical-align: middle !important;
   line-height: 1.3 !important;
+  white-space: nowrap !important;
   user-select: none !important;
-  flex-shrink: 0 !important;
-  z-index: 10 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12) !important;
+  pointer-events: none !important;
 }
 
 .pinglater-chatlist-badge.awaiting {

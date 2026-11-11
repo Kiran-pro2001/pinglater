@@ -764,8 +764,17 @@
       const dataId = node.getAttribute('data-id') || '';
       const preText = node.getAttribute('data-pre-plain-text') || '';
 
-      const isOut = dataId.startsWith('true_') || node.classList.contains('message-out') || preText.includes('You:');
-      const isIn = dataId.startsWith('false_') || node.classList.contains('message-in') || (preText && !preText.includes('You:'));
+      const isOut =
+        dataId.startsWith('true_') ||
+        node.classList.contains('message-out') ||
+        Boolean(node.querySelector?.('.message-out, [class*="message-out"], [data-id^="true_"]')) ||
+        preText.includes('You:');
+
+      const isIn =
+        dataId.startsWith('false_') ||
+        node.classList.contains('message-in') ||
+        Boolean(node.querySelector?.('.message-in, [class*="message-in"], [data-id^="false_"]')) ||
+        (preText && !preText.includes('You:'));
 
       if (isOut) {
         // If the newest message was sent by us, no reply yet
@@ -850,38 +859,28 @@
   }
 
   // ==========================================
-  // LEFT CHAT LIST BADGES (#pane-side)
+  // LEFT CHAT LIST BADGES (#pane-side & #side)
   // Shows live ticking progress pills & warning icons on WhatsApp conversation list
   // ==========================================
   function updateLeftChatListBadges() {
-    const pane = document.querySelector('#pane-side');
-    if (!pane) return;
-
     if (!snoozes || snoozes.length === 0) {
-      pane.querySelectorAll('.pinglater-chatlist-badge').forEach((b) => b.remove());
+      document.querySelectorAll('.pinglater-chatlist-badge').forEach((b) => b.remove());
       return;
-    }
-
-    if (!pane.dataset.pinglaterListened) {
-      pane.dataset.pinglaterListened = 'true';
-      pane.addEventListener('scroll', () => setTimeout(updateLeftChatListBadges, 100), { passive: true });
     }
 
     const now = Date.now();
 
-    // Query all distinct conversation rows in #pane-side
+    // Query all distinct conversation rows across #side, #pane-side, and drawers (including Archived)
     let rows = Array.from(
-      pane.querySelectorAll('div[role="listitem"], div[role="row"], div[data-testid="cell-frame-container"]')
+      document.querySelectorAll(
+        '#side div[role="listitem"], #side div[role="row"], #pane-side div[role="listitem"], #pane-side div[role="row"], div[data-testid="cell-frame-container"]'
+      )
     );
+
     if (rows.length === 0) {
-      rows = Array.from(pane.querySelectorAll('div[tabindex="-1"], div[tabindex="0"]')).filter(
+      rows = Array.from(document.querySelectorAll('#side div[tabindex="-1"], #pane-side div[tabindex="-1"]')).filter(
         (el) => el.offsetHeight > 40 && el.offsetWidth > 150
       );
-    }
-    if (rows.length === 0) {
-      rows = Array.from(pane.querySelectorAll('span[title], span[dir="auto"], [data-testid="cell-frame-title"]')).map(
-        (el) => el.closest('div[tabindex]') || el.parentElement
-      ).filter(Boolean);
     }
 
     rows.forEach((row) => {
@@ -918,8 +917,8 @@
         if (sPhone && cleanPhone && (cleanPhone === sPhone || cleanPhone.endsWith(sPhone) || sPhone.endsWith(cleanPhone))) {
           return true;
         }
-        // Name match (exact or substring)
-        if (sName && lowerTitle && (sName === lowerTitle || sName.includes(lowerTitle) || lowerTitle.includes(sName))) {
+        // Name match (exact, contains, or contained in)
+        if (sName && lowerTitle && (sName === lowerTitle || lowerTitle.includes(sName) || sName.includes(lowerTitle))) {
           return true;
         }
         return false;
@@ -954,6 +953,11 @@
           const txt = existingBadge.querySelector('.pinglater-badge-txt');
           if (txt) txt.textContent = labelText;
         } else {
+          // Guarantee row container is relatively positioned so the absolute badge is framed properly
+          if (getComputedStyle(row).position === 'static') {
+            row.style.position = 'relative';
+          }
+
           const badge = document.createElement('span');
           badge.className = badgeClass;
           badge.title = `PingLater: Awaiting Reply (${match.durationHours || 48}h snooze, ${progressPct}% elapsed)`;
@@ -962,14 +966,7 @@
             <span class="pinglater-badge-txt">${labelText}</span>
           `;
 
-          // Find optimal place in row to append
-          const mountPoint =
-            row.querySelector('[data-testid="cell-frame-title"]') ||
-            (titleEl ? titleEl.parentElement : null) ||
-            row.querySelector('div[role="gridcell"]') ||
-            row;
-
-          mountPoint.appendChild(badge);
+          row.appendChild(badge);
         }
       } else if (existingBadge) {
         existingBadge.remove();
@@ -1103,48 +1100,50 @@
         updatedAt: new Date().toISOString()
       };
 
-      // 1. Immediately update in-memory templates so /shortcut works right away in this active chat
-      const existingIdx = templates.findIndex((t) => (t.shortcut || '').toLowerCase() === shortcut);
-      if (existingIdx >= 0) {
-        templates[existingIdx] = newTpl;
-      } else {
-        templates.push(newTpl);
-      }
-
-      // 2. Persist to chrome.storage.local
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.get(['pinglater_templates'], (res) => {
-          let list = res.pinglater_templates || [];
-          const idx = list.findIndex((t) => (t.shortcut || '').toLowerCase() === shortcut);
-          if (idx >= 0) {
-            list[idx] = newTpl;
-          } else {
-            list.push(newTpl);
-          }
-          chrome.storage.local.set({ pinglater_templates: list }, () => {
-            console.log('[PingLater] Snippet saved successfully to storage:', newTpl);
-          });
-        });
-      }
-
-      // 3. Notify background worker for storage sync
       try {
-        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        // 1. Immediately update in-memory templates so /shortcut works right away in this active chat
+        if (!Array.isArray(templates)) templates = [];
+        const existingIdx = templates.findIndex((t) => t && (t.shortcut || '').toLowerCase() === shortcut);
+        if (existingIdx >= 0) {
+          templates[existingIdx] = newTpl;
+        } else {
+          templates.push(newTpl);
+        }
+
+        // 2. Persist to chrome.storage.local
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(['pinglater_templates'], (res) => {
+            let list = (res && Array.isArray(res.pinglater_templates)) ? res.pinglater_templates : [];
+            const idx = list.findIndex((t) => t && (t.shortcut || '').toLowerCase() === shortcut);
+            if (idx >= 0) {
+              list[idx] = newTpl;
+            } else {
+              list.push(newTpl);
+            }
+            chrome.storage.local.set({ pinglater_templates: list }, () => {
+              console.log('[PingLater] Snippet saved successfully to storage:', newTpl);
+            });
+          });
+        }
+
+        // 3. Notify background worker for storage sync
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
           chrome.runtime.sendMessage({ type: 'SAVE_TEMPLATE', template: newTpl });
         }
-      } catch (e) {
-        console.warn('[PingLater] runtime message failed:', e);
+
+        // Visual confirmation toast
+        showPingLaterToast('⚡', `Saved snippet! Type /${shortcut} in any chat to insert.`);
+      } catch (err) {
+        console.error('[PingLater] Error saving snippet:', err);
+        showPingLaterToast('⚡', `Saved snippet! Type /${shortcut} to use.`);
+      } finally {
+        // 4. ALWAYS Remove modal and clear selection
+        closeModal();
+        hideSelectionSnippetBtn();
+        try {
+          window.getSelection()?.removeAllRanges();
+        } catch (e) {}
       }
-
-      // 4. Remove modal and clear selection
-      closeModal();
-      hideSelectionSnippetBtn();
-      try {
-        window.getSelection()?.removeAllRanges();
-      } catch (e) {}
-
-      // 5. Visual confirmation toast
-      showPingLaterToast('⚡', `Saved snippet! Type /${shortcut} in any chat to insert.`);
     }
 
     saveBtn?.addEventListener('click', (e) => {
