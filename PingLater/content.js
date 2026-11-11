@@ -178,7 +178,7 @@
     const querySlash = currentActiveQuery ? `/${currentActiveQuery.toLowerCase()}` : '';
     const shortcutSlash = tpl.shortcut ? `/${tpl.shortcut.toLowerCase()}` : '';
 
-    // Step 1: Detect if composer ONLY contains the slash command (/gf, /call, etc.)
+    // Step 1: Highlight and delete the slash trigger (/gf, /cal, etc.)
     const raw = (composer.textContent || '').trim().replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
     const isOnlySlash =
       !raw ||
@@ -186,37 +186,78 @@
       raw.toLowerCase() === shortcutSlash ||
       (raw.startsWith('/') && !raw.includes(' '));
 
+    const sel = window.getSelection();
+
     if (isOnlySlash) {
-      // Select all content inside composer so insertText natively replaces everything
-      document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, body);
+      // If composer ONLY contains the slash command, select everything
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(composer);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand('delete');
+      } catch (e) {}
     } else {
-      // If there was preceding text: extend selection backward by the shortcut length and replace
-      const deleteCount = querySlash.length || (currentActiveQuery.length + 1) || charactersToDelete || 3;
-      const sel = window.getSelection();
+      // If there was text before the slash command, highlight the slash command backwards
+      const deleteCount = querySlash.length || (currentActiveQuery ? currentActiveQuery.length + 1 : 0) || charactersToDelete || 3;
       if (sel && sel.rangeCount > 0) {
         for (let i = 0; i < deleteCount; i++) {
           sel.modify('extend', 'backward', 'character');
         }
+        try {
+          document.execCommand('delete');
+        } catch (e) {}
       }
-      document.execCommand('insertText', false, body);
     }
 
-    // Step 2: Post-insertion safety verification:
-    // If the shortcut is still prepended (e.g. "/gfHi, good morning babes"), cleanly select all and overwrite
-    const afterText = (composer.textContent || '').trim();
-    if (querySlash && afterText.toLowerCase().startsWith(querySlash)) {
-      document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, body);
-    } else if (shortcutSlash && afterText.toLowerCase().startsWith(shortcutSlash)) {
-      document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, body);
-    }
-
-    // Step 3: Dispatch InputEvent to turn mic button into send button
+    // Step 2: Native Synthetic Paste Event (Primary method for WhatsApp Web Lexical)
+    let handledByPaste = false;
     try {
-      composer.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: body }));
+      const dt = new DataTransfer();
+      dt.setData('text/plain', body);
+      const pasteEvt = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt
+      });
+      const allowed = composer.dispatchEvent(pasteEvt);
+      if (!allowed) {
+        handledByPaste = true;
+      }
+    } catch (e) {
+      console.warn('[PingLater] Paste event failed:', e);
+    }
+
+    // Step 3: Fallback insertText if paste was not consumed
+    if (!handledByPaste) {
+      try {
+        document.execCommand('insertText', false, body);
+      } catch (e) {}
+    }
+
+    // Step 4: Dispatch InputEvent to turn mic button into send button
+    try {
+      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: body }));
     } catch (e) {}
+
+    // Step 5: Post-insertion safety cleanup:
+    // If Lexical somehow restored /gf or /cal at the very start of the text node, strip it
+    setTimeout(() => {
+      try {
+        const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT);
+        let firstNode = walker.nextNode();
+        if (firstNode) {
+          const txt = firstNode.textContent || '';
+          if (querySlash && txt.toLowerCase().startsWith(querySlash)) {
+            firstNode.textContent = txt.slice(querySlash.length);
+            composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          } else if (shortcutSlash && txt.toLowerCase().startsWith(shortcutSlash)) {
+            firstNode.textContent = txt.slice(shortcutSlash.length);
+            composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          }
+        }
+      } catch (e) {}
+    }, 15);
 
     hidePopup();
   }
