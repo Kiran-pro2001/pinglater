@@ -179,124 +179,43 @@
     const shortcutSlash = tpl.shortcut ? `/${tpl.shortcut.toLowerCase()}` : '';
 
     // Step 1: Detect if composer ONLY contains the slash command (/gf, /call, etc.)
-    const trimmed = (composer.textContent || '').trim().replace(/[\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase();
+    const raw = (composer.textContent || '').trim().replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
     const isOnlySlash =
-      (querySlash && trimmed === querySlash) ||
-      (shortcutSlash && trimmed === shortcutSlash) ||
-      (trimmed.startsWith('/') && !trimmed.includes(' '));
+      !raw ||
+      raw.toLowerCase() === querySlash ||
+      raw.toLowerCase() === shortcutSlash ||
+      (raw.startsWith('/') && !raw.includes(' '));
 
     if (isOnlySlash) {
-      // Clean-slate replacement: select all text in composer so paste/insertText completely overwrites /gf
-      try {
-        document.execCommand('selectAll');
-        document.execCommand('delete');
-      } catch (e) {}
+      // Select all content inside composer so insertText natively replaces everything
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, body);
     } else {
-      // Surgical replacement: locate the specific text node containing the slash query
-      const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT);
-      let currNode;
-      let targetNode = null;
-      let targetIdx = -1;
-      let matchLen = 0;
-
-      while ((currNode = walker.nextNode())) {
-        const lower = currNode.textContent.toLowerCase();
-        if (querySlash && lower.includes(querySlash)) {
-          targetNode = currNode;
-          targetIdx = lower.lastIndexOf(querySlash);
-          matchLen = querySlash.length;
-          break;
-        }
-        if (shortcutSlash && lower.includes(shortcutSlash)) {
-          targetNode = currNode;
-          targetIdx = lower.lastIndexOf(shortcutSlash);
-          matchLen = shortcutSlash.length;
-          break;
-        }
-        const slashPos = lower.lastIndexOf('/');
-        if (slashPos !== -1) {
-          targetNode = currNode;
-          targetIdx = slashPos;
-          matchLen = lower.length - slashPos;
-          break;
+      // If there was preceding text: extend selection backward by the shortcut length and replace
+      const deleteCount = querySlash.length || (currentActiveQuery.length + 1) || charactersToDelete || 3;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        for (let i = 0; i < deleteCount; i++) {
+          sel.modify('extend', 'backward', 'character');
         }
       }
-
-      if (targetNode && targetIdx !== -1) {
-        // Highlight specifically the /query so any delete or insert replaces it
-        try {
-          const sel = window.getSelection();
-          if (sel) {
-            const range = document.createRange();
-            range.setStart(targetNode, targetIdx);
-            range.setEnd(targetNode, targetIdx + matchLen);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            document.execCommand('delete');
-          }
-        } catch (e) {}
-
-        // Direct slice backup if execCommand did not alter node
-        if (targetNode.textContent.toLowerCase().includes(querySlash || '/')) {
-          const cutIdx = targetNode.textContent.toLowerCase().lastIndexOf(querySlash || '/');
-          if (cutIdx !== -1) {
-            const cutLen = querySlash ? querySlash.length : targetNode.textContent.length - cutIdx;
-            targetNode.textContent = targetNode.textContent.slice(0, cutIdx) + targetNode.textContent.slice(cutIdx + cutLen);
-            try {
-              const sel = window.getSelection();
-              if (sel) {
-                const r = document.createRange();
-                r.setStart(targetNode, cutIdx);
-                r.setEnd(targetNode, cutIdx);
-                sel.removeAllRanges();
-                sel.addRange(r);
-              }
-            } catch (e) {}
-          }
-        }
-      } else {
-        // Fallback selection removal
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          try {
-            for (let i = 0; i < charactersToDelete; i++) {
-              sel.modify('extend', 'backward', 'character');
-            }
-            const range = sel.getRangeAt(0);
-            range.deleteContents();
-          } catch (e) {}
-        }
-      }
+      document.execCommand('insertText', false, body);
     }
 
-    // Step 2: Native Synthetic Paste Event (Lexical + React Native handler)
-    let handledByPaste = false;
+    // Step 2: Post-insertion safety verification:
+    // If the shortcut is still prepended (e.g. "/gfHi, good morning babes"), cleanly select all and overwrite
+    const afterText = (composer.textContent || '').trim();
+    if (querySlash && afterText.toLowerCase().startsWith(querySlash)) {
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, body);
+    } else if (shortcutSlash && afterText.toLowerCase().startsWith(shortcutSlash)) {
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, body);
+    }
+
+    // Step 3: Dispatch InputEvent to turn mic button into send button
     try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', body);
-      const pasteEvt = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt
-      });
-      const allowed = composer.dispatchEvent(pasteEvt);
-      if (!allowed) {
-        handledByPaste = true;
-      }
-    } catch (e) {
-      console.warn('[PingLater] Paste event failed:', e);
-    }
-
-    // Step 3: Fallback insertText if paste was not handled
-    if (!handledByPaste) {
-      try {
-        document.execCommand('insertText', false, body);
-      } catch (e) {}
-    }
-
-    // Step 4: Dispatch InputEvent to turn mic button into send button
-    try {
-      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: body }));
+      composer.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: body }));
     } catch (e) {}
 
     hidePopup();
@@ -912,14 +831,21 @@
     const mainChat = document.querySelector('#main');
     if (!mainChat) return null;
 
+    // 1. Direct copyable-text with pre-plain-text
+    const textNodes = Array.from(mainChat.querySelectorAll('div.copyable-text[data-pre-plain-text], div[data-pre-plain-text]'));
+    if (textNodes.length > 0) {
+      return textNodes[textNodes.length - 1];
+    }
+
     const selectors = [
       'div[data-testid="msg-container"]',
+      'div.message-in',
+      'div.message-out',
+      'div[class*="message-in"]',
+      'div[class*="message-out"]',
       'div[data-id^="false_"]',
       'div[data-id^="true_"]',
-      '.message-in',
-      '.message-out',
-      'div[class*="message-in"]',
-      'div[class*="message-out"]'
+      'div[role="row"]'
     ];
 
     const bubbles = Array.from(mainChat.querySelectorAll(selectors.join(', '))).filter((b) => {
@@ -927,15 +853,7 @@
       return true;
     });
 
-    if (bubbles.length > 0) {
-      return bubbles[bubbles.length - 1];
-    }
-
-    // Fallback: search role="row" inside main chat
-    const rows = Array.from(mainChat.querySelectorAll('div[role="row"]')).filter((r) => {
-      return r.querySelector('[data-pre-plain-text], span[data-icon*="check"], .copyable-text');
-    });
-    return rows.length > 0 ? rows[rows.length - 1] : null;
+    return bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
   }
 
   function getLastBubbleId(bubble) {
@@ -951,17 +869,7 @@
   function isBubbleIncoming(bubble) {
     if (!bubble) return false;
 
-    // 1. Direct data-id prefix
-    const dataId = bubble.getAttribute('data-id') || bubble.dataset.id || bubble.querySelector('[data-id]')?.getAttribute('data-id') || '';
-    if (dataId.startsWith('false_')) return true;
-    if (dataId.startsWith('true_')) return false;
-
-    // 2. Class check
-    const classStr = (bubble.className || '') + ' ' + (bubble.firstElementChild?.className || '');
-    if (classStr.includes('message-in')) return true;
-    if (classStr.includes('message-out')) return false;
-
-    // 3. Pre-plain-text header: [time, date] Sender:
+    // 1. Pre-plain-text header: [time, date] Sender:
     const preTextEl = bubble.querySelector('[data-pre-plain-text]') || (bubble.hasAttribute('data-pre-plain-text') ? bubble : null);
     if (preTextEl) {
       const preText = preTextEl.getAttribute('data-pre-plain-text') || '';
@@ -969,11 +877,21 @@
       if (preText.length > 0) return true;
     }
 
-    // 4. Check for outgoing delivery / read tick marks (ticks only ever exist on outgoing messages)
+    // 2. Check for outgoing delivery / read tick marks (ticks only ever exist on outgoing messages)
     const hasTick = bubble.querySelector(
       'span[data-icon*="check"], span[data-testid*="check"], span[data-icon="msg-time"], [data-testid="msg-check"], [data-testid="msg-dblcheck"]'
     );
     if (hasTick) return false;
+
+    // 3. Direct data-id prefix
+    const dataId = bubble.getAttribute('data-id') || bubble.dataset.id || bubble.querySelector('[data-id]')?.getAttribute('data-id') || '';
+    if (dataId.startsWith('false_')) return true;
+    if (dataId.startsWith('true_')) return false;
+
+    // 4. Class check
+    const classStr = (bubble.className || '') + ' ' + (bubble.firstElementChild?.className || '');
+    if (classStr.includes('message-in')) return true;
+    if (classStr.includes('message-out')) return false;
 
     // 5. If it's a message bubble inside main chat and has no checkmark and isn't out, it's incoming
     const hasMsgContent = bubble.querySelector('.copyable-text, [data-testid="bubble-message-text"], span[dir="ltr"], span[dir="auto"]');
@@ -987,33 +905,29 @@
   // Auto-Reply Detection: checks if the latest message bubble in active chat is an incoming reply
   function checkActiveChatForReply(activeSnooze) {
     if (!activeSnooze || activeSnooze.status !== 'awaiting') return false;
-    const lastBubble = getLastMessageBubble();
-    if (!lastBubble) return false;
 
-    const currentId = getLastBubbleId(lastBubble);
-    const isIncoming = isBubbleIncoming(lastBubble);
-
-    // If we recorded the last seen message ID at snooze creation time:
-    if (activeSnooze.lastSeenMessageId) {
-      if (currentId === activeSnooze.lastSeenMessageId) {
-        return false; // Still the same message, no new reply
-      }
-      if (isIncoming) {
-        console.log('[PingLater] Auto-Reply Detected! New incoming message from:', activeSnooze.contactName);
+    // METHOD 1 (Direct Metadata): Check the latest copyable-text in #main with data-pre-plain-text
+    const textNodes = Array.from(document.querySelectorAll('#main div.copyable-text[data-pre-plain-text], #main div[data-pre-plain-text]'));
+    if (textNodes.length > 0) {
+      const lastNode = textNodes[textNodes.length - 1];
+      const preText = lastNode.getAttribute('data-pre-plain-text') || '';
+      if (preText && !preText.includes('You:')) {
+        console.log('[PingLater] Auto-Reply Detected via data-pre-plain-text:', preText);
         resolveSnoozeManual(activeSnooze.id);
         showPingLaterToast('🎉', `${activeSnooze.contactName} replied! "Awaiting Reply" cleared.`);
         return true;
       }
-      return false;
     }
 
-    // Fallback: If latest bubble is incoming, contact replied!
-    if (isIncoming) {
-      console.log('[PingLater] Auto-Reply Detected! Latest message is incoming from:', activeSnooze.contactName);
+    // METHOD 2 (Bubble Container): Check the latest message container
+    const lastBubble = getLastMessageBubble();
+    if (lastBubble && isBubbleIncoming(lastBubble)) {
+      console.log('[PingLater] Auto-Reply Detected via bubble container from:', activeSnooze.contactName);
       resolveSnoozeManual(activeSnooze.id);
       showPingLaterToast('🎉', `${activeSnooze.contactName} replied! "Awaiting Reply" cleared.`);
       return true;
     }
+
     return false;
   }
 
