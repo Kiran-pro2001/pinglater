@@ -373,11 +373,12 @@
 .pinglater-chatlist-badge {
   font-size: 10.5px;
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 8px;
   margin-left: 6px;
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   white-space: nowrap;
   vertical-align: middle;
   line-height: 1.3;
@@ -385,19 +386,190 @@
 }
 
 .pinglater-chatlist-badge.awaiting {
-  background: #DCFCE7;
-  color: #15803D;
+  background: #F0FDF4;
+  color: #166534;
   border: 1px solid #86EFAC;
 }
 
 .pinglater-chatlist-badge.due {
-  background: #FEE2E2;
-  color: #B91C1C;
-  border: 1px solid #FCA5A5;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1.5px solid #F87171;
+  font-weight: 800;
   animation: pinglaterPulse 1.8s infinite;
 }
 
+/* Mini Progress Bar inside the Left Chat List Badge */
+.pinglater-mini-bar {
+  display: inline-block;
+  width: 28px;
+  height: 5px;
+  background: #E2E8F0;
+  border-radius: 3px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.pinglater-mini-fill {
+  display: block;
+  height: 100%;
+  background: #22C55E;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.pinglater-chatlist-badge.due .pinglater-mini-bar {
+  background: #FECACA;
+}
+
+.pinglater-chatlist-badge.due .pinglater-mini-fill {
+  background: #EF4444;
+}
+
 @keyframes pinglaterPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.65; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.75; transform: scale(0.98); }
+}
+
+/* ===================================================
+   PingLater — Floating "Save as Snippet" on Text Selection
+   =================================================== */
+
+#pinglater-selection-snippet-btn {
+  position: fixed;
+  z-index: 2147483647;
+  background: #0F172A;
+  color: #FFFFFF;
+  border: 1px solid #22C55E;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  animation: pinglaterFadeIn 0.15s ease-out;
+  user-select: none;
+}
+
+#pinglater-selection-snippet-btn:hover {
+  background: #15803D;
+  border-color: #4ADE80;
+}
+
+/* Modal: Save Selected Text as Snippet */
+#pinglater-save-snippet-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pinglaterFadeIn 0.15s ease-out;
+}
+
+.pinglater-modal-card {
+  background: #FFFFFF;
+  border-radius: 12px;
+  width: 440px;
+  max-width: 90vw;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  border: 1px solid #E2E8F0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pinglater-modal-header {
+  padding: 12px 18px;
+  background: #F8FAFC;
+  border-bottom: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pinglater-modal-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #0F172A;
+}
+
+.pinglater-modal-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pinglater-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pinglater-form-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.pinglater-form-input {
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #0F172A;
+  outline: none;
+  font-family: inherit;
+}
+
+.pinglater-form-input:focus {
+  border-color: #22C55E;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
+}
+
+.pinglater-modal-footer {
+  padding: 10px 18px;
+  background: #F8FAFC;
+  border-top: 1px solid #E2E8F0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pinglater-btn-secondary {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pinglater-btn-primary {
+  background: #22C55E;
+  border: 1px solid #16A34A;
+  color: #FFFFFF;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pinglater-btn-primary:hover {
+  background: #16A34A;
 }
