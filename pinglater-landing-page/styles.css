@@ -492,8 +492,36 @@ iframe[src*="netlify.com"] {
   font-weight: 700;
   color: var(--color-primary-dark);
   background: rgba(18, 140, 126, 0.12);
-  padding: 3px 10px;
+  padding: 4px 10px;
   border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-pulse-dot {
+  width: 7px;
+  height: 7px;
+  background-color: #25D366;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7);
+  animation: pulseGreen 2s infinite;
+}
+
+@keyframes pulseGreen {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(37, 211, 102, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 211, 102, 0);
+  }
 }
 
 /* Inside WhatsApp Web Simulator */
@@ -1553,6 +1581,51 @@ iframe[src*="netlify.com"] {
   color: #065F46;
   font-size: 0.92rem;
   font-weight: 800;
+}
+
+/* Comparison HUD Explainer Note */
+.comparison-hud-note {
+  margin-top: 24px;
+  background: linear-gradient(135deg, rgba(18, 140, 126, 0.06) 0%, rgba(37, 211, 102, 0.06) 100%);
+  border: 1px solid rgba(18, 140, 126, 0.24);
+  border-radius: 14px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  box-shadow: 0 4px 18px rgba(18, 140, 126, 0.06);
+}
+
+.hud-note-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(18, 140, 126, 0.15);
+  color: var(--color-primary-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 12px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid rgba(18, 140, 126, 0.3);
+}
+
+.hud-badge-icon {
+  font-size: 0.95rem;
+}
+
+.hud-note-text {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: #334155;
+}
+
+.hud-note-text strong {
+  color: #0F172A;
+  font-weight: 700;
 }
 
 /* ========================================================
@@ -2648,6 +2721,13 @@ iframe[src*="netlify.com"] {
   .comparison-table th, .comparison-table td {
     padding: 10px 12px;
     font-size: 0.82rem;
+  }
+
+  .comparison-hud-note {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    margin-top: 16px;
   }
 
   /* Pricing Section Mobile */
