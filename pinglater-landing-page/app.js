@@ -267,13 +267,68 @@
       { type: 'pill', icon: '⏳', label: '59m 24s Countdown', sub: 'Live', color: '#128C7E' },
     ];
 
+    // Helper to calculate the hero text exclusion zone (keeps tokens out of the reading path)
+    function getHeroExclusion() {
+      const headline = document.querySelector('.hero-headline');
+      const subhead = document.querySelector('.hero-subhead');
+      const ctaGroup = document.querySelector('.hero-cta-group');
+      if (!headline) return null;
+
+      const hRect = headline.getBoundingClientRect();
+      const sRect = subhead ? subhead.getBoundingClientRect() : hRect;
+      const cRect = ctaGroup ? ctaGroup.getBoundingClientRect() : sRect;
+
+      // Only active if hero section is currently visible in viewport
+      if (cRect.bottom < 0 || hRect.top > height) return null;
+
+      const bufferX = 65; // Safe padding outside headline/subhead margins
+      const bufferY = 35; // Safe padding above headline and below CTAs
+
+      const left = Math.min(hRect.left, sRect.left) - bufferX;
+      const right = Math.max(hRect.right, sRect.right) + bufferX;
+      const top = Math.max(76, hRect.top - bufferY);
+      const bottom = cRect.bottom + bufferY;
+
+      return {
+        left,
+        right,
+        top,
+        bottom,
+        centerX: (left + right) / 2,
+        centerY: (top + bottom) / 2,
+        halfW: (right - left) / 2,
+        halfH: (bottom - top) / 2
+      };
+    }
+
     const tokens = tokenPresets.map((preset, idx) => {
+      const zone = idx % 4;
+      let startX, startY;
+
+      if (zone === 0) {
+        // Left Margin Zone
+        startX = 35 + Math.random() * (width * 0.18);
+        startY = 90 + Math.random() * (height * 0.75);
+      } else if (zone === 1) {
+        // Right Margin Zone
+        startX = width - 40 - Math.random() * (width * 0.18);
+        startY = 90 + Math.random() * (height * 0.75);
+      } else if (zone === 2) {
+        // Top Perimeter Zone (above headline)
+        startX = width * 0.15 + Math.random() * (width * 0.7);
+        startY = 50 + Math.random() * 80;
+      } else {
+        // Bottom Perimeter Zone (below CTA buttons)
+        startX = width * 0.15 + Math.random() * (width * 0.7);
+        startY = height * 0.75 + Math.random() * (height * 0.18);
+      }
+
       return {
         ...preset,
-        x: (width / (tokenPresets.length + 1)) * (idx + 1) + (Math.random() - 0.5) * 80,
-        y: Math.random() * (height * 0.85) + height * 0.08,
+        x: startX,
+        y: startY,
         z: 0.35 + Math.random() * 0.65, // Z-depth layer (0.35 = background, 1.0 = foreground)
-        vx: (Math.random() - 0.5) * 0.3,
+        vx: (zone === 0 ? -0.15 : zone === 1 ? 0.15 : (Math.random() - 0.5) * 0.25),
         vy: (Math.random() - 0.5) * 0.25,
         floatPhase: Math.random() * Math.PI * 2,
         floatSpeed: 0.0015 + Math.random() * 0.0015,
@@ -330,15 +385,49 @@
         ctx.restore();
       });
 
-      // 2. Draw Floating 3D HUD Tokens with Parallax Depth
+      // 2. Draw Floating 3D HUD Tokens with Parallax Depth (Steering around text)
+      const ex = getHeroExclusion();
+
       tokens.forEach((t) => {
         t.x += t.vx;
         t.y += t.vy;
 
-        if (t.x < 30) t.x = width - 40;
-        if (t.x > width - 30) t.x = 40;
-        if (t.y < 30) t.y = height - 40;
-        if (t.y > height - 30) t.y = 40;
+        // Wrap around outer screen boundaries
+        if (t.x < 25) t.x = width - 35;
+        if (t.x > width - 25) t.x = 35;
+        if (t.y < 30) t.y = height - 35;
+        if (t.y > height - 30) t.y = 35;
+
+        // Deflect away from central Hero Text (Keeping headline & subtitle 100% clean)
+        if (ex) {
+          const dx = t.x - ex.centerX;
+          const dy = t.y - ex.centerY;
+          const absDx = Math.abs(dx);
+          const absDy = Math.abs(dy);
+
+          // Hard exclusion: If inside the text boundary, immediately push into the nearest outer margin
+          if (absDx < ex.halfW && absDy < ex.halfH) {
+            const overlapX = ex.halfW - absDx;
+            const overlapY = ex.halfH - absDy;
+
+            if (overlapX < overlapY) {
+              const signX = dx >= 0 ? 1 : -1;
+              t.x = ex.centerX + signX * (ex.halfW + 12);
+              t.vx = signX * Math.max(0.35, Math.abs(t.vx));
+            } else {
+              const signY = dy >= 0 ? 1 : -1;
+              t.y = ex.centerY + signY * (ex.halfH + 12);
+              t.vy = signY * Math.max(0.3, Math.abs(t.vy));
+            }
+          } else if (absDx < ex.halfW + 55 && absDy < ex.halfH + 45) {
+            // Soft aerodynamic deflection: gently curve badges around the outer margins of the text
+            const pushFactor = 0.025;
+            t.vx += (dx / ex.halfW) * pushFactor;
+            t.vy += (dy / ex.halfH) * pushFactor;
+            t.vx = Math.max(-0.6, Math.min(0.6, t.vx));
+            t.vy = Math.max(-0.5, Math.min(0.5, t.vy));
+          }
+        }
 
         const floatY = Math.sin(now * t.floatSpeed + t.floatPhase) * (10 * t.z);
         const parallaxX = mouseOffsetFactorX * (35 * t.z);
