@@ -674,7 +674,8 @@
     const normTitle = normalizeChatTitle(info.title);
 
     const match = snoozes.find((s) => {
-      if (s.status !== 'awaiting') return false;
+      // Must match BOTH 'awaiting' and 'due' snoozes (an overdue chat is still active!)
+      if (!['awaiting', 'due'].includes(s.status)) return false;
 
       // Phone match
       if (info.phone && s.phone && String(s.phone).replace(/\D/g, '') === info.phone) return true;
@@ -790,7 +791,7 @@
     const desiredState = activeSnooze ? `awaiting_${activeSnooze.id}` : `idle_${activeContactId}`;
 
     // Auto-reply check in active chat: if the other person already replied, resolve snooze immediately!
-    if (activeSnooze && activeSnooze.status === 'awaiting') {
+    if (activeSnooze && ['awaiting', 'due'].includes(activeSnooze.status)) {
       const resolved = checkActiveChatForReply(activeSnooze);
       if (resolved) {
         return;
@@ -808,7 +809,8 @@
       if (activeSnooze) {
         const badge = container.querySelector('.pinglater-snooze-badge');
         if (badge) {
-          badge.textContent = formatRemainingTime(activeSnooze.dueAt);
+          const isDue = activeSnooze.status === 'due' || new Date(activeSnooze.dueAt).getTime() <= Date.now();
+          badge.textContent = isDue ? 'Overdue 0s' : formatRemainingTime(activeSnooze.dueAt);
         }
       }
       return;
@@ -817,12 +819,18 @@
     container.dataset.currentState = desiredState;
 
     if (activeSnooze) {
-      const remaining = formatRemainingTime(activeSnooze.dueAt);
+      const isDue = activeSnooze.status === 'due' || new Date(activeSnooze.dueAt).getTime() <= Date.now();
+      const remaining = isDue ? 'Overdue 0s' : formatRemainingTime(activeSnooze.dueAt);
+      const pillClass = isDue ? 'pinglater-snooze-pill due' : 'pinglater-snooze-pill awaiting';
+      const badgeIcon = isDue ? '⏰' : '⏳';
+      const labelText = isDue ? 'Follow-up Due' : 'Awaiting reply';
+      const badgeStyle = isDue ? 'style="background:#EF4444; color:#FFFFFF;"' : '';
+
       container.innerHTML = `
-        <div class="pinglater-snooze-pill awaiting">
-          <span>⏳</span>
-          <span>Awaiting reply</span>
-          <span class="pinglater-snooze-badge">${escapeHtml(remaining)}</span>
+        <div class="${pillClass}">
+          <span>${badgeIcon}</span>
+          <span>${labelText}</span>
+          <span class="pinglater-snooze-badge" ${badgeStyle}>${escapeHtml(remaining)}</span>
           <button type="button" class="pinglater-pill-btn-action btn-replied" title="Mark as replied">✓ Replied</button>
           <button type="button" class="pinglater-pill-btn-action btn-cancel" title="Cancel snooze">✕</button>
         </div>
@@ -985,14 +993,28 @@
       updatedAt: now.toISOString()
     };
 
-    // Reflect synchronously in memory to eliminate render latency
+    // Reflect synchronously in memory to eliminate render latency (remove prior active snoozes for same contact)
+    const normNewName = normalizeChatTitle(newSnooze.contactName);
+    snoozes = snoozes.filter((s) => {
+      if (!['awaiting', 'due'].includes(s.status)) return true;
+      if (newSnooze.phone && s.phone && String(s.phone).replace(/\D/g, '') === String(newSnooze.phone).replace(/\D/g, '')) return false;
+      if (normNewName && normalizeChatTitle(s.contactName) === normNewName) return false;
+      return true;
+    });
     snoozes.unshift(newSnooze);
     if (snoozeContainer) {
       snoozeContainer.dataset.currentState = '';
     }
 
     chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
-      const list = res.pinglater_snoozed_chats || [];
+      let list = res.pinglater_snoozed_chats || [];
+      // Clean up any prior active/due snoozes for this contact from storage as well
+      list = list.filter((s) => {
+        if (!['awaiting', 'due'].includes(s.status)) return true;
+        if (newSnooze.phone && s.phone && String(s.phone).replace(/\D/g, '') === String(newSnooze.phone).replace(/\D/g, '')) return false;
+        if (normNewName && normalizeChatTitle(s.contactName) === normNewName) return false;
+        return true;
+      });
       list.unshift(newSnooze);
       chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
         // Schedule background alarm
@@ -1153,36 +1175,71 @@
     return false;
   }
 
-  // Auto-Reply Detection: checks if the latest message bubble in active chat is an incoming reply
+  // Auto-Reply Detection: checks if ANY incoming reply was received in the active chat
   function checkActiveChatForReply(activeSnooze) {
-    if (!activeSnooze || activeSnooze.status !== 'awaiting') return false;
-    const lastBubble = getLastMessageBubble();
-    if (!lastBubble) return false;
+    if (!activeSnooze || !['awaiting', 'due'].includes(activeSnooze.status)) return false;
 
-    const currentId = getLastBubbleId(lastBubble);
-    const isIncoming = isBubbleIncoming(lastBubble);
+    const mainChat = document.querySelector('#main');
+    if (!mainChat) return false;
 
-    // If we recorded the last seen message ID at snooze creation time:
+    // Get all message bubbles in active conversation
+    const bubbles = Array.from(
+      mainChat.querySelectorAll(
+        'div[data-id], div.message-in, div.message-out, div[data-testid="msg-container"]'
+      )
+    ).filter((el) => {
+      return el.classList.contains('message-in') ||
+             el.classList.contains('message-out') ||
+             el.getAttribute('data-id') ||
+             el.querySelector('[data-pre-plain-text]');
+    });
+
+    if (bubbles.length === 0) return false;
+
+    // 1. Locate the message ID recorded when snooze was created
+    let lastSeenIdx = -1;
     if (activeSnooze.lastSeenMessageId) {
-      if (currentId === activeSnooze.lastSeenMessageId) {
-        return false; // Still the same message, no new reply
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        if (getLastBubbleId(bubbles[i]) === activeSnooze.lastSeenMessageId) {
+          lastSeenIdx = i;
+          break;
+        }
       }
-      if (isIncoming) {
-        console.log('[PingLater] Auto-Reply Detected! New incoming message from:', activeSnooze.contactName);
-        resolveSnoozeManual(activeSnooze.id);
-        showPingLaterToast('🎉', `${activeSnooze.contactName} replied! "Awaiting Reply" cleared.`);
-        return true;
+    }
+
+    // 2. If found, check if ANY bubble after that point is incoming:
+    if (lastSeenIdx >= 0) {
+      for (let i = lastSeenIdx + 1; i < bubbles.length; i++) {
+        if (isBubbleIncoming(bubbles[i])) {
+          console.log('[PingLater] Auto-Reply Detected! Incoming bubble after snooze created:', activeSnooze.contactName);
+          resolveSnoozeManual(activeSnooze.id);
+          return true;
+        }
       }
       return false;
     }
 
-    // Fallback: If latest bubble is incoming, contact replied!
-    if (isIncoming) {
-      console.log('[PingLater] Auto-Reply Detected! Latest message is incoming from:', activeSnooze.contactName);
-      resolveSnoozeManual(activeSnooze.id);
-      showPingLaterToast('🎉', `${activeSnooze.contactName} replied! "Awaiting Reply" cleared.`);
-      return true;
+    // 3. Fallback: inspect recent bubbles (last 10)
+    const recentBubbles = bubbles.slice(-10);
+    for (let i = recentBubbles.length - 1; i >= 0; i--) {
+      const b = recentBubbles[i];
+      if (isBubbleIncoming(b)) {
+        // If latest bubble is incoming:
+        if (i === recentBubbles.length - 1) {
+          console.log('[PingLater] Auto-Reply Detected! Latest bubble is incoming from:', activeSnooze.contactName);
+          resolveSnoozeManual(activeSnooze.id);
+          return true;
+        }
+
+        // Or if there is an incoming bubble distinct from the recorded outgoing message:
+        if (activeSnooze.lastSeenMessageId && getLastBubbleId(b) !== activeSnooze.lastSeenMessageId) {
+          console.log('[PingLater] Auto-Reply Detected! Incoming reply found in recent bubbles from:', activeSnooze.contactName);
+          resolveSnoozeManual(activeSnooze.id);
+          return true;
+        }
+      }
     }
+
     return false;
   }
 
@@ -1197,7 +1254,7 @@
 
     activeChatObserver = new MutationObserver(() => {
       const activeSnooze = getActiveSnoozeForCurrentChat();
-      if (activeSnooze && activeSnooze.status === 'awaiting') {
+      if (activeSnooze && ['awaiting', 'due'].includes(activeSnooze.status)) {
         checkActiveChatForReply(activeSnooze);
       }
     });
@@ -1357,8 +1414,17 @@
 
         if (hiddenSnoozes.length > 0) {
           const dueCount = hiddenSnoozes.filter((s) => s.status === 'due' || (s.dueAt && new Date(s.dueAt).getTime() <= now)).length;
+          const totalCount = hiddenSnoozes.length;
           const badgeClass = dueCount > 0 ? 'pinglater-chatlist-badge due' : 'pinglater-chatlist-badge awaiting';
-          const labelText = dueCount > 0 ? `⚠️ ${dueCount} DUE` : `⏳ ${hiddenSnoozes.length} snoozed`;
+          
+          let labelText;
+          if (dueCount > 0 && dueCount < totalCount) {
+            labelText = `⚠️ ${dueCount} due / ${totalCount} snoozed`;
+          } else if (dueCount > 0) {
+            labelText = `⚠️ ${dueCount} DUE`;
+          } else {
+            labelText = `⏳ ${totalCount} snoozed`;
+          }
 
           if (existingBadge) {
             existingBadge.className = badgeClass;

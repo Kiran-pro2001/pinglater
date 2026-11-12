@@ -1969,7 +1969,7 @@ function closeTemplateModal() {
 // ==========================================
 
 let currentSnoozes = [];
-let currentSnoozeFilter = 'all';
+let currentSnoozeFilter = 'active';
 
 function setupSnoozeTab() {
   // Filter pills
@@ -1978,9 +1978,20 @@ function setupSnoozeTab() {
     p.addEventListener('click', () => {
       pills.forEach((x) => x.classList.remove('active'));
       p.classList.add('active');
-      currentSnoozeFilter = p.dataset.filter || 'all';
+      currentSnoozeFilter = p.dataset.filter || 'active';
       renderSnoozeCards();
     });
+  });
+
+  // KPI card quick-filters
+  document.getElementById('cardFilterAwaiting')?.addEventListener('click', () => {
+    document.querySelector('#snoozeFilterPills .pill[data-filter="awaiting"]')?.click();
+  });
+  document.getElementById('cardFilterDue')?.addEventListener('click', () => {
+    document.querySelector('#snoozeFilterPills .pill[data-filter="due"]')?.click();
+  });
+  document.getElementById('cardFilterReplied')?.addEventListener('click', () => {
+    document.querySelector('#snoozeFilterPills .pill[data-filter="replied"]')?.click();
   });
 
   // Modal open / close
@@ -2064,10 +2075,11 @@ async function refreshSnoozeView() {
   const elReplied = document.getElementById('statRepliedCount');
   if (elReplied) elReplied.textContent = String(repliedCount);
 
+  const totalActive = awaitingCount + dueCount;
+
   // Update nav badge
   const navBadge = document.getElementById('navSnoozeBadge');
   if (navBadge) {
-    const totalActive = awaitingCount + dueCount;
     if (totalActive > 0) {
       navBadge.textContent = String(totalActive);
       navBadge.classList.remove('hidden');
@@ -2075,6 +2087,22 @@ async function refreshSnoozeView() {
       navBadge.classList.add('hidden');
     }
   }
+
+  // Update pill count badges
+  const elPillActive = document.getElementById('pillCountActive');
+  if (elPillActive) elPillActive.textContent = String(totalActive);
+
+  const elPillAwaiting = document.getElementById('pillCountAwaiting');
+  if (elPillAwaiting) elPillAwaiting.textContent = String(awaitingCount);
+
+  const elPillDue = document.getElementById('pillCountDue');
+  if (elPillDue) elPillDue.textContent = String(dueCount);
+
+  const elPillReplied = document.getElementById('pillCountReplied');
+  if (elPillReplied) elPillReplied.textContent = String(repliedCount);
+
+  const elPillAll = document.getElementById('pillCountAll');
+  if (elPillAll) elPillAll.textContent = String(currentSnoozes.length);
 
   renderSnoozeCards();
 }
@@ -2109,7 +2137,9 @@ function renderSnoozeCards() {
   const now = Date.now();
 
   let filtered = currentSnoozes;
-  if (currentSnoozeFilter === 'awaiting') {
+  if (currentSnoozeFilter === 'active') {
+    filtered = currentSnoozes.filter((s) => s.status !== SNOOZE_STATUS.REPLIED);
+  } else if (currentSnoozeFilter === 'awaiting') {
     filtered = currentSnoozes.filter((s) => s.status === SNOOZE_STATUS.AWAITING && new Date(s.dueAt).getTime() > now);
   } else if (currentSnoozeFilter === 'due') {
     filtered = currentSnoozes.filter((s) => s.status === SNOOZE_STATUS.DUE || (s.status === SNOOZE_STATUS.AWAITING && new Date(s.dueAt).getTime() <= now));

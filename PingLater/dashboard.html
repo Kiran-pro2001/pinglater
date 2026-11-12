@@ -700,21 +700,21 @@
 
         <!-- KPI Metrics Grid -->
         <div class="snooze-stats-grid">
-          <div class="stat-card">
+          <div class="stat-card" id="cardFilterAwaiting" style="cursor: pointer;" title="Click to view contacts counting down">
             <span class="stat-icon">⏳</span>
             <div>
               <div class="stat-num" id="statAwaitingCount">0</div>
-              <div class="stat-lbl">Awaiting Reply</div>
+              <div class="stat-lbl">In Countdown</div>
             </div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" id="cardFilterDue" style="cursor: pointer;" title="Click to view overdue follow-ups">
             <span class="stat-icon">⏰</span>
             <div>
               <div class="stat-num" id="statDueCount" style="color:#EF4444;">0</div>
               <div class="stat-lbl">Due for Follow-up</div>
             </div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" id="cardFilterReplied" style="cursor: pointer;" title="Click to view resolved replies">
             <span class="stat-icon">🎉</span>
             <div>
               <div class="stat-num" id="statRepliedCount" style="color:#10B981;">0</div>
@@ -725,10 +725,11 @@
 
         <!-- Filter Pills -->
         <div class="filter-pills" id="snoozeFilterPills" style="margin-top: 16px;">
-          <button class="pill active" data-filter="all">All Contacts</button>
-          <button class="pill" data-filter="awaiting">⏳ Awaiting Reply</button>
-          <button class="pill" data-filter="due">⏰ Due for Follow-up</button>
-          <button class="pill" data-filter="replied">🎉 Replied</button>
+          <button class="pill active" data-filter="active">⚡ Active Follow-ups (<span id="pillCountActive">0</span>)</button>
+          <button class="pill" data-filter="awaiting">⏳ In Countdown (<span id="pillCountAwaiting">0</span>)</button>
+          <button class="pill" data-filter="due">⏰ Due for Follow-up (<span id="pillCountDue">0</span>)</button>
+          <button class="pill" data-filter="replied">🎉 Replied (<span id="pillCountReplied">0</span>)</button>
+          <button class="pill" data-filter="all">All Contacts (<span id="pillCountAll">0</span>)</button>
         </div>
 
         <div id="snoozeCardsContainer" class="snooze-cards-grid">
