@@ -531,6 +531,38 @@
 
   loadSnoozes();
 
+  // Helper to test if a string is a subtitle / status / group member noise rather than a chat title
+  function isSubtitleNoise(str) {
+    if (!str) return true;
+    const s = str.trim().toLowerCase();
+    if (
+      s === 'click here for group info' ||
+      s === 'online' ||
+      s === 'typing...' ||
+      s === 'recording audio...' ||
+      s.startsWith('last seen') ||
+      s.includes('business account') ||
+      s === 'tap here for contact info'
+    ) {
+      return true;
+    }
+    // Group member list in subtitle (e.g. "Aditi, Harkirat, Lekhansh, ...")
+    if (str.includes(',') && (str.includes('You') || str.includes('~') || str.split(',').length >= 2)) {
+      return true;
+    }
+    return false;
+  }
+
+  // Normalize titles for comparison (strips emojis, extra symbols, and spaces)
+  function normalizeChatTitle(str) {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+  }
+
   function getCurrentChatInfo() {
     try {
       const mainChat = document.querySelector('#main');
@@ -541,40 +573,78 @@
       // Check header inside #main
       const header = mainChat.querySelector('header') || mainChat.querySelector('[data-testid="conversation-header"]') || mainChat.firstElementChild;
       if (header) {
-        // Try elements with title attributes first
-        const titleWithAttr = header.querySelector('[title]:not([role="button"]):not(button)');
-        if (titleWithAttr && titleWithAttr.getAttribute('title')) {
-          rawTitle = titleWithAttr.getAttribute('title').trim();
+        // 1. Explicit WhatsApp data-testid for conversation title in header (Highest precision!)
+        const testIdTitle = header.querySelector('[data-testid="conversation-info-header-chat-title"]');
+        if (testIdTitle) {
+          const txt = (testIdTitle.getAttribute('title') || testIdTitle.textContent || '').trim();
+          if (txt && !isSubtitleNoise(txt)) {
+            rawTitle = txt;
+          }
         }
 
+        // 2. Clickable conversation details header block
         if (!rawTitle) {
-          const candidate =
-            header.querySelector('span[data-testid="conversation-info-header-chat-title"]') ||
-            header.querySelector('div[role="button"] span[title]') ||
-            header.querySelector('div[role="button"] span[dir="auto"]') ||
-            header.querySelector('h2') ||
-            header.querySelector('span[dir="auto"]');
-          if (candidate) {
-            rawTitle = (candidate.getAttribute('title') || candidate.textContent || '').trim();
+          const conversationDetails = header.querySelector('div[role="button"][tabindex="0"], div[role="button"]');
+          if (conversationDetails) {
+            // In WhatsApp Web, the first container inside conversationDetails holds the actual title (group name or contact)
+            const firstLineContainer = conversationDetails.firstElementChild;
+            if (firstLineContainer) {
+              const cand = firstLineContainer.querySelector('span[title], span[dir="auto"], h2') || firstLineContainer;
+              const txt = (cand.getAttribute('title') || cand.textContent || '').trim();
+              if (txt && !isSubtitleNoise(txt)) {
+                rawTitle = txt;
+              }
+            }
+            if (!rawTitle) {
+              const candidates = conversationDetails.querySelectorAll('span[title], h2, span[dir="auto"]');
+              for (const cand of candidates) {
+                const txt = (cand.getAttribute('title') || cand.textContent || '').trim();
+                if (txt && !isSubtitleNoise(txt)) {
+                  rawTitle = txt;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // 3. Fallback: Any element with title attribute that is NOT noise and NOT inside action menus
+        if (!rawTitle) {
+          const allTitles = header.querySelectorAll('[title]:not([role="button"]):not(button)');
+          for (const el of allTitles) {
+            const txt = (el.getAttribute('title') || '').trim();
+            if (txt && !isSubtitleNoise(txt) && !el.closest('[data-testid="menu-bar"], [data-testid="chat-controls"]')) {
+              rawTitle = txt;
+              break;
+            }
           }
         }
       }
 
-      // Check active item in left conversation list
-      if (!rawTitle) {
+      // 4. Fallback: Check the currently active / selected row in the left conversation list!
+      if (!rawTitle || isSubtitleNoise(rawTitle)) {
         const activeLeftItem =
+          document.querySelector('#side div[aria-selected="true"]') ||
           document.querySelector('#pane-side div[aria-selected="true"]') ||
-          document.querySelector('#pane-side div[tabindex="0"]');
+          document.querySelector('div[data-animate-drawer-panel="true"] div[aria-selected="true"]') ||
+          document.querySelector('div[aria-selected="true"]');
         if (activeLeftItem) {
-          const nameSpan = activeLeftItem.querySelector('span[title]') || activeLeftItem.querySelector('span[dir="auto"]');
-          if (nameSpan) {
-            rawTitle = (nameSpan.getAttribute('title') || nameSpan.textContent || '').trim();
+          const titleEl =
+            activeLeftItem.querySelector('[data-testid="cell-frame-title"] span') ||
+            activeLeftItem.querySelector('[data-testid="cell-frame-title"]') ||
+            activeLeftItem.querySelector('span[title]') ||
+            activeLeftItem.querySelector('span[dir="auto"]');
+          if (titleEl) {
+            const txt = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
+            if (txt && !isSubtitleNoise(txt)) {
+              rawTitle = txt;
+            }
           }
         }
       }
 
       // Fallback: never let rawTitle be empty when active chat is open
-      if (!rawTitle) {
+      if (!rawTitle || isSubtitleNoise(rawTitle)) {
         rawTitle = 'Contact';
       }
 
@@ -601,14 +671,53 @@
     const info = getCurrentChatInfo();
     if (!info) return null;
 
-    return (
-      snoozes.find((s) => {
-        if (s.status !== 'awaiting') return false;
-        if (info.phone && s.phone && String(s.phone).replace(/\D/g, '') === info.phone) return true;
-        if (info.title && s.contactName && s.contactName.trim().toLowerCase() === info.title.trim().toLowerCase()) return true;
-        return false;
-      }) || null
-    );
+    const normTitle = normalizeChatTitle(info.title);
+
+    const match = snoozes.find((s) => {
+      if (s.status !== 'awaiting') return false;
+
+      // Phone match
+      if (info.phone && s.phone && String(s.phone).replace(/\D/g, '') === info.phone) return true;
+
+      if (info.title && s.contactName) {
+        const sName = s.contactName.trim().toLowerCase();
+        const iTitle = info.title.trim().toLowerCase();
+        if (sName === iTitle) return true;
+
+        // Normalized comparison (handles emojis like ⭐ Database - Random Stuff vs Database)
+        const normS = normalizeChatTitle(s.contactName);
+        if (normS && normTitle && (normS === normTitle || normTitle.includes(normS) || normS.includes(normTitle))) {
+          return true;
+        }
+
+        // Auto-heal legacy bug: if snooze was saved with member list (contains commas and member names),
+        // and current group header subtitle matches those members, auto-heal to real group title!
+        if (s.contactName.includes(',') && (s.contactName.includes('You') || s.contactName.split(',').length >= 2)) {
+          const headerText = (document.querySelector('#main header')?.textContent || '').toLowerCase();
+          const firstMember = s.contactName.split(',')[0].trim().toLowerCase();
+          if (headerText.includes(firstMember)) {
+            console.log('[PingLater] Auto-healing group snooze title from member list to:', info.title);
+            s.contactName = info.title;
+            s.cleanIdentifier = info.cleanIdentifier;
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+              chrome.storage.local.get(['pinglater_snoozed_chats'], (res) => {
+                const list = res.pinglater_snoozed_chats || [];
+                const item = list.find((it) => it.id === s.id);
+                if (item) {
+                  item.contactName = info.title;
+                  item.cleanIdentifier = info.cleanIdentifier;
+                  chrome.storage.local.set({ pinglater_snoozed_chats: list });
+                }
+              });
+            }
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
+    return match || null;
   }
 
   function formatRemainingTime(dueAtIso) {
@@ -1135,27 +1244,52 @@
 
     // Clean up any stray badges that aren't inside valid contact rows
     document.querySelectorAll('.pinglater-chatlist-badge').forEach((b) => {
-      if (!b.closest('#pane-side div[role="listitem"], #side div[role="listitem"], div[role="row"], div[data-testid="cell-frame-container"]')) {
+      if (!b.closest('#side [data-testid="cell-frame-title"], #pane-side div[role="listitem"], #side div[role="listitem"], div[role="row"], div[data-testid="cell-frame-container"]')) {
         b.remove();
       }
     });
 
-    // Query all distinct conversation rows across main list, #side, and the Archived drawer
-    const rowSelectors = [
-      '#pane-side div[role="listitem"]',
-      'div[data-animate-drawer-panel="true"] div[role="listitem"]',
-      'div[aria-label*="Archived"] div[role="listitem"]',
-      'div[aria-label*="archived"] div[role="listitem"]',
-      '#side div[role="listitem"]',
-      '#pane-side div[role="row"]',
-      'div[data-animate-drawer-panel="true"] div[role="row"]'
-    ];
+    // Universal chat row query across main list, archived view, search view, and filtered lists
+    const titleElements = Array.from(
+      document.querySelectorAll(
+        '#side [data-testid="cell-frame-title"], #pane-side [data-testid="cell-frame-title"], div[data-testid="cell-frame-title"]'
+      )
+    );
+    const rows = [];
+    const seenRows = new Set();
 
-    const rawRows = Array.from(document.querySelectorAll(rowSelectors.join(', ')));
-    // Filter to top-level rows (never nested children of another matched row)
-    const rows = rawRows.filter((r) => {
-      return !r.parentElement?.closest(rowSelectors.join(', '));
+    titleElements.forEach((tEl) => {
+      const row =
+        tEl.closest('div[role="listitem"]') ||
+        tEl.closest('div[role="row"]') ||
+        tEl.closest('div[data-testid="cell-frame-container"]') ||
+        tEl.closest('div[tabindex="-1"]')?.parentElement?.closest('div[tabindex="-1"]') ||
+        tEl.closest('div[tabindex="-1"]');
+      if (row && !seenRows.has(row)) {
+        seenRows.add(row);
+        rows.push(row);
+      }
     });
+
+    // Also include any fallback row containers in #pane-side or drawers
+    const fallbackRows = document.querySelectorAll(
+      '#pane-side div[role="listitem"], #side div[role="listitem"], div[data-animate-drawer-panel="true"] div[role="listitem"], div[aria-label*="Archived"] div[role="listitem"]'
+    );
+    fallbackRows.forEach((row) => {
+      if (!seenRows.has(row)) {
+        seenRows.add(row);
+        rows.push(row);
+      }
+    });
+
+    // Also check for the "Archived" folder entry on the main chat list (to show "X snoozed" count)
+    const archivedHeaderRow = document
+      .querySelector('#pane-side [data-testid="archived"], #pane-side span[data-testid="archived-icon"], #pane-side div[aria-label*="Archived"]')
+      ?.closest('div[role="listitem"], div[role="row"], div[data-testid="cell-frame-container"]');
+    if (archivedHeaderRow && !seenRows.has(archivedHeaderRow)) {
+      seenRows.add(archivedHeaderRow);
+      rows.unshift(archivedHeaderRow);
+    }
 
     rows.forEach((row) => {
       // Purge any duplicate badges on this row
@@ -1192,25 +1326,29 @@
 
       const cleanPhone = contactTitle.replace(/\D/g, '');
       const lowerTitle = contactTitle.toLowerCase();
+      const normTitle = normalizeChatTitle(contactTitle);
 
-      // Check if this row is the "Archived" folder header
+      // Check if this row is the "Archived" folder header button (on main list only!)
       const isArchivedHeader =
-        lowerTitle === 'archived' ||
-        lowerTitle.startsWith('archived') ||
-        row.querySelector('[data-testid="archived"]') !== null ||
-        row.querySelector('span[data-testid="archived-icon"]') !== null;
+        (lowerTitle === 'archived' || lowerTitle.startsWith('archived')) &&
+        (row.querySelector('[data-testid="archived"]') !== null ||
+          row.querySelector('span[data-testid="archived-icon"]') !== null ||
+          row.closest('#pane-side') !== null);
 
       if (isArchivedHeader) {
         // Only count snoozes that are NOT currently displayed on the main visible list
         const hiddenSnoozes = activeSnoozes.filter((s) => {
           const sName = (s.contactName || '').trim().toLowerCase();
+          const sNorm = normalizeChatTitle(s.contactName);
           const sPhone = String(s.phone || '').replace(/\D/g, '');
           const mainPane = document.getElementById('pane-side');
           if (!mainPane) return true;
           const titles = mainPane.querySelectorAll('[data-testid="cell-frame-title"], div[role="gridcell"] span[dir="auto"]');
           for (const t of titles) {
             const txt = (t.getAttribute('title') || t.textContent || '').trim().toLowerCase();
+            const normTxt = normalizeChatTitle(txt);
             if (sName && sName.length >= 2 && (txt === sName || txt.includes(sName))) return false;
+            if (sNorm && normTxt && (normTxt === sNorm || normTxt.includes(sNorm))) return false;
             if (sPhone && txt.replace(/\D/g, '').endsWith(sPhone)) return false;
           }
           return true;
@@ -1241,7 +1379,7 @@
         return;
       }
 
-      // 2. Find matching snooze for individual contact
+      // 2. Find matching snooze for individual contact or group
       const match = snoozes.find((s) => {
         if (!['awaiting', 'due'].includes(s.status)) return false;
         const sPhone = String(s.phone || '').replace(/\D/g, '');
@@ -1251,9 +1389,24 @@
         if (sPhone && cleanPhone && (cleanPhone === sPhone || cleanPhone.endsWith(sPhone) || sPhone.endsWith(cleanPhone))) {
           return true;
         }
-        // Name match (avoid matching empty strings)
+        // Direct title match
         if (sName && sName.length >= 2 && lowerTitle && (sName === lowerTitle || lowerTitle.includes(sName) || sName.includes(lowerTitle))) {
           return true;
+        }
+        // Normalized title match (handles emojis like ⭐, quotes, special symbols)
+        const normS = normalizeChatTitle(s.contactName);
+        if (normS && normTitle && (normS === normTitle || normTitle.includes(normS) || normS.includes(normTitle))) {
+          return true;
+        }
+        // Auto-heal legacy group snooze saved with member list:
+        if (s.contactName && s.contactName.includes(',') && (s.contactName.includes('You') || s.contactName.split(',').length >= 2)) {
+          const rowText = (row.textContent || '').toLowerCase();
+          const firstMember = s.contactName.split(',')[0].trim().toLowerCase();
+          if (firstMember && rowText.includes(firstMember)) {
+            console.log('[PingLater] Auto-healing group snooze from member list to row title:', contactTitle);
+            s.contactName = contactTitle;
+            return true;
+          }
         }
         return false;
       });
@@ -1552,22 +1705,97 @@
     }, 50);
   });
 
-  // Periodic 1-second ticking timer for live countdown seconds & observer
+  // Reactive Observers for Zero-Latency HUD Switching
+  let mainChatObserver = null;
+  function initMainChatObserver() {
+    const mainEl = document.querySelector('#main');
+    if (!mainEl) return;
+
+    if (mainChatObserver) {
+      mainChatObserver.disconnect();
+    }
+
+    mainChatObserver = new MutationObserver(() => {
+      updateSnoozePill();
+      updateLeftChatListBadges();
+      if (!activeChatObserver) {
+        initReplyObserver();
+      }
+    });
+
+    // Observe changes to header (title change, contact change)
+    const header = mainEl.querySelector('header');
+    if (header) {
+      mainChatObserver.observe(header, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    } else {
+      mainChatObserver.observe(mainEl, {
+        childList: true
+      });
+    }
+  }
+
+  let sideChatObserver = null;
+  let isUpdatingSideBadges = false;
+  function initSideChatObserver() {
+    const sideEl = document.querySelector('#side') || document.querySelector('#pane-side');
+    if (!sideEl) return;
+
+    if (sideChatObserver) {
+      sideChatObserver.disconnect();
+    }
+
+    sideChatObserver = new MutationObserver((mutations) => {
+      if (isUpdatingSideBadges) return;
+      // Filter out mutations that are just our own injected badges
+      const isExternalChange = mutations.some((m) => {
+        return !Array.from(m.addedNodes).some((n) => n.classList?.contains('pinglater-chatlist-badge'));
+      });
+      if (isExternalChange) {
+        isUpdatingSideBadges = true;
+        setTimeout(() => {
+          updateLeftChatListBadges();
+          isUpdatingSideBadges = false;
+        }, 80);
+      }
+    });
+
+    sideChatObserver.observe(sideEl, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  // Periodic 1-second ticking timer for live countdown seconds & observer health check
   setInterval(() => {
     updateSnoozePill();
     updateLeftChatListBadges();
     if (!activeChatObserver && document.querySelector('#main')) {
       initReplyObserver();
     }
+    if (!mainChatObserver && document.querySelector('#main')) {
+      initMainChatObserver();
+    }
+    if (!sideChatObserver && (document.querySelector('#side') || document.querySelector('#pane-side'))) {
+      initSideChatObserver();
+    }
   }, 1000);
 
-  // Immediate snap when switching chats or resizing window
+  // Immediate snap when switching chats or resizing window (rapid burst for 0ms lag)
   document.addEventListener('click', (e) => {
     if (snoozeContainer && snoozeContainer.contains(e.target)) {
       return;
     }
-    setTimeout(updateSnoozePill, 100);
-    setTimeout(updateLeftChatListBadges, 200);
+    [40, 150, 300, 600].forEach((delay) => {
+      setTimeout(() => {
+        updateSnoozePill();
+        updateLeftChatListBadges();
+        initMainChatObserver();
+      }, delay);
+    });
   });
 
   window.addEventListener('resize', () => {
@@ -1579,6 +1807,8 @@
   setTimeout(() => {
     updateSnoozePill();
     updateLeftChatListBadges();
+    initMainChatObserver();
+    initSideChatObserver();
   }, 500);
 
   console.log('[PingLater] In-Chat Quick Snippets, Text-Selection Saver & Smart Snooze loaded.');
