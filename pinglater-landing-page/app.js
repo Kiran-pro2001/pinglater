@@ -297,7 +297,39 @@
         centerX: (left + right) / 2,
         centerY: (top + bottom) / 2,
         halfW: (right - left) / 2,
-        halfH: (bottom - top) / 2
+        halfH: (bottom - top) / 2,
+        rectWidth: right - left
+      };
+    }
+
+    // Helper to calculate the footer text exclusion zone (keeps tokens around the margin, away from links)
+    function getFooterExclusion() {
+      const footerContainer = document.querySelector('.footer-container');
+      if (!footerContainer) return null;
+
+      const fRect = footerContainer.getBoundingClientRect();
+
+      // Only active if footer is currently in visible viewport
+      if (fRect.bottom < 0 || fRect.top > height) return null;
+
+      const bufferX = 40; // Safe lateral buffer
+      const bufferY = 25; // Safe vertical buffer
+
+      const left = fRect.left - bufferX;
+      const right = fRect.right + bufferX;
+      const top = fRect.top - bufferY;
+      const bottom = fRect.bottom + bufferY;
+
+      return {
+        left,
+        right,
+        top,
+        bottom,
+        centerX: (left + right) / 2,
+        centerY: (top + bottom) / 2,
+        halfW: (right - left) / 2,
+        halfH: (bottom - top) / 2,
+        rectWidth: fRect.width
       };
     }
 
@@ -386,7 +418,11 @@
       });
 
       // 2. Draw Floating 3D HUD Tokens with Parallax Depth (Steering around text)
-      const ex = getHeroExclusion();
+      const exclusions = [];
+      const heroEx = getHeroExclusion();
+      if (heroEx) exclusions.push(heroEx);
+      const footerEx = getFooterExclusion();
+      if (footerEx) exclusions.push(footerEx);
 
       tokens.forEach((t) => {
         t.x += t.vx;
@@ -398,8 +434,9 @@
         if (t.y < 30) t.y = height - 35;
         if (t.y > height - 30) t.y = 35;
 
-        // Deflect away from central Hero Text (Keeping headline & subtitle 100% clean)
-        if (ex) {
+        // Deflect away from text exclusion zones (Hero Headline & Footer Columns/Links)
+        for (let i = 0; i < exclusions.length; i++) {
+          const ex = exclusions[i];
           const dx = t.x - ex.centerX;
           const dy = t.y - ex.centerY;
           const absDx = Math.abs(dx);
@@ -409,19 +446,21 @@
           if (absDx < ex.halfW && absDy < ex.halfH) {
             const overlapX = ex.halfW - absDx;
             const overlapY = ex.halfH - absDy;
+            const sideMargin = (width - (ex.rectWidth || (ex.halfW * 2))) / 2;
 
-            if (overlapX < overlapY) {
+            // If side margin is ample (>= 80px), push laterally into margins; otherwise push above/below
+            if (overlapX < overlapY && sideMargin >= 80) {
               const signX = dx >= 0 ? 1 : -1;
-              t.x = ex.centerX + signX * (ex.halfW + 12);
+              t.x = ex.centerX + signX * (ex.halfW + 16);
               t.vx = signX * Math.max(0.35, Math.abs(t.vx));
             } else {
               const signY = dy >= 0 ? 1 : -1;
-              t.y = ex.centerY + signY * (ex.halfH + 12);
+              t.y = ex.centerY + signY * (ex.halfH + 16);
               t.vy = signY * Math.max(0.3, Math.abs(t.vy));
             }
           } else if (absDx < ex.halfW + 55 && absDy < ex.halfH + 45) {
             // Soft aerodynamic deflection: gently curve badges around the outer margins of the text
-            const pushFactor = 0.025;
+            const pushFactor = 0.028;
             t.vx += (dx / ex.halfW) * pushFactor;
             t.vy += (dy / ex.halfH) * pushFactor;
             t.vx = Math.max(-0.6, Math.min(0.6, t.vx));
@@ -504,30 +543,71 @@
   // ==========================================
   function initMobileStickyBar() {
     const stickyBar = document.getElementById('mobileStickyBar');
+    const pricingSection = document.getElementById('pricing');
     if (!stickyBar) return;
 
-    let isVisible = false;
-    window.addEventListener(
-      'scroll',
-      () => {
-        const shouldShow = window.scrollY > 280;
-        if (shouldShow !== isVisible) {
-          isVisible = shouldShow;
-          if (isVisible) {
-            stickyBar.classList.add('visible');
-          } else {
-            stickyBar.classList.remove('visible');
-          }
+    function handleScroll() {
+      // Only active on mobile screen widths (<= 768px)
+      if (window.innerWidth > 768) {
+        stickyBar.classList.remove('visible');
+        return;
+      }
+
+      const scrollY = window.scrollY || window.pageYOffset;
+
+      // Reveal once scrolled down past the hero section (> 260px)
+      if (scrollY < 260) {
+        stickyBar.classList.remove('visible');
+        return;
+      }
+
+      // Hide when pricing section is prominently in view so it doesn't overlap pricing card
+      if (pricingSection) {
+        const pRect = pricingSection.getBoundingClientRect();
+        const inPricing = pRect.top < window.innerHeight * 0.75 && pRect.bottom > 120;
+        if (inPricing) {
+          stickyBar.classList.remove('visible');
+          return;
         }
-      },
-      { passive: true }
-    );
+      }
+
+      stickyBar.classList.add('visible');
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll, { passive: true });
+    handleScroll();
+  }
+
+  // ==========================================
+  // REMOVE NETLIFY INJECTED BADGE / FEEDBACK DRAWER
+  // ==========================================
+  function removeNetlifyBadge() {
+    const selectors = [
+      '#netlify-badge',
+      '.netlify-badge',
+      '[data-netlify-drawer]',
+      'netlify-drawer',
+      '[class*="netlify-feedback"]',
+      '[class*="netlify-drawer"]',
+      'iframe[src*="netlify.com"]'
+    ];
+    selectors.forEach((sel) => {
+      document.querySelectorAll(sel).forEach((el) => {
+        el.style.setProperty('display', 'none', 'important');
+        el.remove();
+      });
+    });
   }
 
   // ==========================================
   // INITIALIZATION ON DOM READY
   // ==========================================
   document.addEventListener('DOMContentLoaded', () => {
+    removeNetlifyBadge();
+    const badgeObserver = new MutationObserver(removeNetlifyBadge);
+    badgeObserver.observe(document.body, { childList: true, subtree: true });
+
     initFaq();
     initSimulator();
     init3DTilt();
