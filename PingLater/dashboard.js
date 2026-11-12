@@ -75,11 +75,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateLiveClock();
   setInterval(updateLiveClock, 1000);
 
-  // Sync with background and sidepanel events
+  // Sync with background, content script, and sidepanel events
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === 'BATCH_COMPLETED' || msg.type === 'SCHEDULE_BATCH') {
         refreshBatchesList();
+      } else if (msg.type === 'REFRESH_SNOOZES' || msg.type === 'SNOOZE_RESOLVED' || msg.type === 'SNOOZE_CREATED') {
+        refreshSnoozeView();
+      } else if (msg.type === 'CADENCE_CONTACT_REPLIED' || msg.type === 'CADENCE_ENROLLMENT_UPDATED') {
+        refreshCadencesData();
+      }
+    });
+  }
+
+  // Real-time cross-tab storage change listener (Dynamic sync with WhatsApp Web)
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local') {
+        if (changes.pinglater_snoozed_chats) {
+          refreshSnoozeView();
+        }
+        if (changes.pinglater_batches) {
+          refreshBatchesList();
+        }
+        if (changes.pinglater_cadences || changes.pinglater_cadence_enrollments) {
+          refreshCadencesData();
+        }
+        if (changes.pinglater_snippets) {
+          refreshSnippetsList();
+        }
+        if (changes.pinglater_templates) {
+          refreshTemplatesList();
+        }
       }
     });
   }

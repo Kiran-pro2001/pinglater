@@ -1036,6 +1036,7 @@
           chrome.storage.local.set({ pinglater_snoozed_chats: list }, () => {
             if (chrome.runtime?.id) {
               chrome.runtime.sendMessage({ type: 'CANCEL_SNOOZE_ALARM', snoozeId: id });
+              chrome.runtime.sendMessage({ type: 'SNOOZE_RESOLVED', snoozeId: id }).catch(() => {});
             }
           });
         }

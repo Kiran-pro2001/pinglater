@@ -226,6 +226,12 @@
     window.addEventListener('resize', () => {
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
+      if (width <= 768 && animId) {
+        cancelAnimationFrame(animId);
+        animId = null;
+      } else if (width > 768 && !animId && isTabVisible) {
+        animId = requestAnimationFrame(render);
+      }
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -235,7 +241,7 @@
 
     document.addEventListener('visibilitychange', () => {
       isTabVisible = !document.hidden;
-      if (isTabVisible && !animId) {
+      if (isTabVisible && !animId && window.innerWidth > 768) {
         animId = requestAnimationFrame(render);
       } else if (!isTabVisible && animId) {
         cancelAnimationFrame(animId);
@@ -398,7 +404,10 @@
       animId = requestAnimationFrame(render);
     }
 
-    animId = requestAnimationFrame(render);
+    // Only start ambient floating canvas on desktop screens (>768px)
+    if (window.innerWidth > 768) {
+      animId = requestAnimationFrame(render);
+    }
   }
 
   // ==========================================

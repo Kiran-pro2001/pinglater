@@ -2397,6 +2397,11 @@ main {
 }
 
 @media (max-width: 768px) {
+  /* Disable ambient floating tokens & canvas on phone screens */
+  #ambient-canvas {
+    display: none !important;
+  }
+
   /* Navigation Bar Mobile Polish */
   .site-header {
     height: 66px;
@@ -2699,78 +2704,16 @@ main {
     flex-direction: column;
     text-align: center;
     gap: 8px;
-    padding-bottom: 74px; /* Essential clearance for Mobile Sticky Action Bar */
+    padding-bottom: 24px; /* Clean spacing without floating sticky bar */
   }
 
-  /* Mobile Sticky Bottom Conversion Bar */
+  /* Remove floating sticky conversion bar & footer badge on phone view */
   .mobile-sticky-bar {
-    display: flex;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: rgba(11, 20, 26, 0.94);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    padding: 10px 16px max(10px, env(safe-area-inset-bottom, 10px));
-    z-index: 999;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
-    transform: translateY(120%);
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: none !important;
   }
 
-  .mobile-sticky-bar.visible {
-    transform: translateY(0);
-  }
-
-  .mobile-sticky-details {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.2;
-  }
-
-  .mobile-sticky-name {
-    font-size: 0.74rem;
-    font-weight: 700;
-    color: #94A3B8;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .mobile-sticky-pricing {
-    font-size: 0.92rem;
-    font-weight: 800;
-    color: #FFFFFF;
-  }
-
-  .mobile-sticky-pricing .m-price-curr {
-    color: #25D366;
-  }
-
-  .mobile-sticky-pricing .m-price-sub {
-    font-size: 0.74rem;
-    color: #CBD5E1;
-    font-weight: 600;
-  }
-
-  .btn-mobile-sticky {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: linear-gradient(135deg, var(--color-primary) 0%, #25D366 100%);
-    color: #FFFFFF;
-    text-decoration: none;
-    font-weight: 800;
-    font-size: 0.88rem;
-    padding: 9px 18px;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(37, 211, 102, 0.35);
-    white-space: nowrap;
-    flex-shrink: 0;
+  .footer-challenge-badge {
+    display: none !important;
   }
 }
 
