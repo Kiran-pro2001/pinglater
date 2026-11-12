@@ -333,9 +333,21 @@
       };
     }
 
+    // Measurement font for HUD pills
+    const pillFont = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = pillFont;
+
     const tokens = tokenPresets.map((preset, idx) => {
       const zone = idx % 4;
       let startX, startY;
+
+      // Compute dynamic pill width so text always stays safely inside with generous padding
+      let pillWidth = 115;
+      if (preset.type === 'pill') {
+        const textMetrics = ctx.measureText(preset.label);
+        // 13px left padding + 16px icon + 4px gap + textWidth + 17px right padding = textWidth + 50px
+        pillWidth = Math.max(120, Math.ceil(textMetrics.width + 50));
+      }
 
       if (zone === 0) {
         // Left Margin Zone
@@ -357,6 +369,7 @@
 
       return {
         ...preset,
+        pillWidth,
         x: startX,
         y: startY,
         z: 0.35 + Math.random() * 0.65, // Z-depth layer (0.35 = background, 1.0 = foreground)
@@ -428,11 +441,12 @@
         t.x += t.vx;
         t.y += t.vy;
 
-        // Wrap around outer screen boundaries
-        if (t.x < 25) t.x = width - 35;
-        if (t.x > width - 25) t.x = 35;
-        if (t.y < 30) t.y = height - 35;
-        if (t.y > height - 30) t.y = 35;
+        // Wrap around outer screen boundaries smoothly
+        const halfPillW = (t.pillWidth || 120) / 2;
+        if (t.x < -halfPillW - 20) t.x = width + halfPillW + 10;
+        if (t.x > width + halfPillW + 20) t.x = -halfPillW - 10;
+        if (t.y < 20) t.y = height - 25;
+        if (t.y > height - 20) t.y = 25;
 
         // Deflect away from text exclusion zones (Hero Headline & Footer Columns/Links)
         for (let i = 0; i < exclusions.length; i++) {
@@ -483,13 +497,15 @@
         if (t.type === 'tick') {
           // Double tick checkmark badge
           ctx.font = '700 15px -apple-system, sans-serif';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center';
           ctx.fillStyle = `rgba(37, 211, 102, ${t.alpha * 1.5})`;
           ctx.shadowColor = 'rgba(37, 211, 102, 0.4)';
           ctx.shadowBlur = 8;
-          ctx.fillText(t.icon, -10, 5);
+          ctx.fillText(t.icon, 0, 0);
         } else {
-          // Frosted 3D HUD Pill
-          const pillWidth = 115;
+          // Frosted 3D HUD Pill with dynamic width tailored to text length
+          const pillWidth = t.pillWidth || 135;
           const pillHeight = 28;
           const radius = 14;
 
@@ -515,15 +531,17 @@
 
           // Clear shadow for crisp text
           ctx.shadowColor = 'transparent';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'left';
 
           // Icon
           ctx.font = '12px -apple-system, sans-serif';
-          ctx.fillText(t.icon, -pillWidth / 2 + 10, 4);
+          ctx.fillText(t.icon, -pillWidth / 2 + 13, 0);
 
-          // Label
-          ctx.font = '600 11px -apple-system, sans-serif';
+          // One-liner Label completely inside the box
+          ctx.font = pillFont;
           ctx.fillStyle = t.color;
-          ctx.fillText(t.label, -pillWidth / 2 + 28, 4);
+          ctx.fillText(t.label, -pillWidth / 2 + 33, 0);
         }
 
         ctx.restore();
