@@ -402,6 +402,31 @@
   }
 
   // ==========================================
+  // MOBILE STICKY ACTION BAR
+  // ==========================================
+  function initMobileStickyBar() {
+    const stickyBar = document.getElementById('mobileStickyBar');
+    if (!stickyBar) return;
+
+    let isVisible = false;
+    window.addEventListener(
+      'scroll',
+      () => {
+        const shouldShow = window.scrollY > 280;
+        if (shouldShow !== isVisible) {
+          isVisible = shouldShow;
+          if (isVisible) {
+            stickyBar.classList.add('visible');
+          } else {
+            stickyBar.classList.remove('visible');
+          }
+        }
+      },
+      { passive: true }
+    );
+  }
+
+  // ==========================================
   // INITIALIZATION ON DOM READY
   // ==========================================
   document.addEventListener('DOMContentLoaded', () => {
@@ -409,5 +434,6 @@
     initSimulator();
     init3DTilt();
     initAmbientCanvas();
+    initMobileStickyBar();
   });
 })();

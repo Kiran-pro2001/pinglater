@@ -2176,8 +2176,8 @@ main {
 
 .footer-top {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 48px;
+  grid-template-columns: 1.8fr 1fr 1.3fr 1.4fr;
+  gap: 36px;
   padding-bottom: 48px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -2296,6 +2296,42 @@ main {
   color: #38BDF8;
 }
 
+.social-icon-link.social-yt:hover .social-icon-box {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #EF4444;
+}
+
+.social-icon-link.social-tg:hover .social-icon-box {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #38BDF8;
+}
+
+.social-icon-link.social-ig:hover .social-icon-box {
+  background: rgba(244, 63, 94, 0.25);
+  border-color: rgba(244, 63, 94, 0.6);
+  color: #F43F5E;
+}
+
+.social-icon-link.social-fb:hover .social-icon-box {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.6);
+  color: #3B82F6;
+}
+
+.social-icon-link.social-rd:hover .social-icon-box {
+  background: rgba(249, 115, 22, 0.25);
+  border-color: rgba(249, 115, 22, 0.6);
+  color: #F97316;
+}
+
+.social-icon-link.social-mail:hover .social-icon-box {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #EF4444;
+}
+
 .footer-bottom {
   display: flex;
   justify-content: space-between;
@@ -2305,6 +2341,20 @@ main {
   color: #64748B;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.footer-subtext code {
+  color: #38BDF8;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ========================================================
+   MOBILE STICKY ACTION BAR
+   ======================================================== */
+.mobile-sticky-bar {
+  display: none;
 }
 
 /* ========================================================
@@ -2341,26 +2391,209 @@ main {
   }
 
   .footer-top {
-    grid-template-columns: 1fr;
-    gap: 32px;
+    grid-template-columns: 1fr 1fr;
+    gap: 36px;
   }
 }
 
 @media (max-width: 768px) {
+  /* Navigation Bar Mobile Polish */
+  .site-header {
+    height: 66px;
+  }
+
   .nav-links {
     display: none;
   }
 
-  .challenge-pill {
-    display: none;
+  .brand-name {
+    font-size: 1.15rem;
+  }
+
+  .brand-tagline {
+    font-size: 0.62rem;
+  }
+
+  .btn-nav-cta {
+    padding: 7px 14px;
+    font-size: 0.82rem;
+    gap: 5px;
+  }
+
+  /* Fold 1: Hero Section for Mobile (Remove 100vh constraint) */
+  .hero-section {
+    min-height: auto;
+    max-height: none;
+    padding: 32px 0 20px;
+  }
+
+  .hero-headline {
+    font-size: clamp(1.8rem, 6.2vw, 2.25rem);
+    line-height: 1.18;
   }
 
   .hero-headline span {
     display: inline;
   }
 
+  .hero-subhead {
+    font-size: 0.95rem;
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+
+  .hero-cta-group {
+    width: 100%;
+    gap: 12px;
+  }
+
+  .btn-hero-primary {
+    width: 100%;
+    max-width: 100%;
+    padding: 15px 20px;
+    font-size: 1.02rem;
+    justify-content: center;
+  }
+
+  .cta-micro-copy {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    padding: 0 8px;
+  }
+
+  .hero-trust-badges {
+    font-size: 0.78rem;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .trust-separator {
+    display: none;
+  }
+
+  .trust-item {
+    background: rgba(18, 140, 126, 0.08);
+    border: 1px solid rgba(18, 140, 126, 0.15);
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+
+  /* Standard Section Padding */
+  .simulator-section,
+  .demo-walkthrough-section,
+  .problem-section,
+  .features-section,
+  .comparison-section,
+  .testimonials-section,
+  .pricing-section,
+  .faq-section,
+  .decision-section {
+    padding: 48px 0;
+  }
+
+  .section-header-center {
+    margin-bottom: 30px;
+  }
+
+  .section-title {
+    font-size: clamp(1.6rem, 5.2vw, 2.05rem);
+    line-height: 1.22;
+  }
+
+  .section-subtitle,
+  .section-lead {
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  /* Interactive Simulator Mobile Adaptations */
+  .hero-mockup-frame {
+    border-radius: 14px;
+    margin: 0;
+  }
+
+  .browser-chrome {
+    height: 38px;
+    padding: 0 10px;
+  }
+
+  .browser-address-bar {
+    display: none;
+  }
+
+  .browser-pill-tag {
+    font-size: 0.68rem;
+    padding: 2px 8px;
+  }
+
+  .wa-sim-viewport {
+    height: 420px;
+  }
+
+  .wa-main-header {
+    height: 52px;
+    padding: 0 10px;
+  }
+
+  .wa-avatar-user {
+    width: 34px;
+    height: 34px;
+    margin-right: 8px;
+  }
+
+  .wa-main-name {
+    font-size: 0.82rem;
+  }
+
+  .wa-main-status {
+    font-size: 0.68rem;
+  }
+
+  .pinglater-sim-docked-pill {
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    gap: 4px;
+  }
+
+  .pinglater-sim-docked-pill .docked-title {
+    display: none; /* Hide label so timer and button fit comfortably */
+  }
+
+  .docked-btn-replied {
+    padding: 2px 6px;
+    font-size: 0.68rem;
+  }
+
+  .pinglater-sim-snippet-popup {
+    left: 8px;
+    right: 8px;
+    max-width: none;
+    bottom: 56px;
+  }
+
+  .sim-composer-box {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  .sim-send-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Walkthrough & Features */
+  .walkthrough-steps-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .walkthrough-step-card {
+    padding: 24px 18px;
+  }
+
   .features-bento-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .bento-wide, .bento-full {
@@ -2369,31 +2602,228 @@ main {
 
   .feature-stat-strip {
     grid-template-columns: 1fr;
-    gap: 14px;
+    gap: 12px;
   }
 
-  .walkthrough-steps-grid {
-    grid-template-columns: 1fr;
+  /* Reality Cards */
+  .reality-cards-grid {
+    gap: 16px;
+  }
+
+  .reality-card {
+    padding: 24px 18px;
+  }
+
+  /* Comparison Matrix */
+  .comparison-table th, .comparison-table td {
+    padding: 10px 12px;
+    font-size: 0.82rem;
+  }
+
+  /* Pricing Section Mobile */
+  .flagship-card {
+    padding: 28px 16px;
+    border-radius: 18px;
+  }
+
+  .plan-name {
+    font-size: 1.6rem;
+  }
+
+  .price-display-box {
+    padding: 18px 14px;
+    margin-bottom: 24px;
+  }
+
+  .curr-symbol {
+    font-size: 1.8rem;
+  }
+
+  .price-num {
+    font-size: clamp(2.8rem, 11vw, 3.5rem);
+  }
+
+  .currency-toggle-bar {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .pricing-checklist {
+    font-size: 0.86rem;
+    gap: 10px;
+  }
+
+  .p-item {
+    font-size: 0.86rem;
+    gap: 8px;
+  }
+
+  .btn-pricing-cta,
+  .btn-final-primary {
+    width: 100%;
+    justify-content: center;
+    padding: 16px 20px;
+    font-size: 1.05rem;
   }
 
   .decision-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .flagship-card {
-    padding: 28px 20px;
-  }
-
-  .offer-box {
-    padding: 28px 20px;
+  .decision-card {
+    padding: 24px 18px;
   }
 
   .final-cta-box {
-    padding: 40px 24px;
+    padding: 36px 18px;
   }
 
-  .btn-hero-primary, .btn-final-primary, .btn-pricing-cta {
+  .final-cta-heading {
+    font-size: clamp(1.6rem, 5.2vw, 2.1rem);
+  }
+
+  .final-cta-subhead {
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+  }
+
+  /* Footer on Mobile */
+  .footer-top {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding-bottom: 32px;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+    gap: 8px;
+    padding-bottom: 74px; /* Essential clearance for Mobile Sticky Action Bar */
+  }
+
+  /* Mobile Sticky Bottom Conversion Bar */
+  .mobile-sticky-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
     width: 100%;
-    justify-content: center;
+    background: rgba(11, 20, 26, 0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 10px 16px max(10px, env(safe-area-inset-bottom, 10px));
+    z-index: 999;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+    transform: translateY(120%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .mobile-sticky-bar.visible {
+    transform: translateY(0);
+  }
+
+  .mobile-sticky-details {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+
+  .mobile-sticky-name {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #94A3B8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .mobile-sticky-pricing {
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #FFFFFF;
+  }
+
+  .mobile-sticky-pricing .m-price-curr {
+    color: #25D366;
+  }
+
+  .mobile-sticky-pricing .m-price-sub {
+    font-size: 0.74rem;
+    color: #CBD5E1;
+    font-weight: 600;
+  }
+
+  .btn-mobile-sticky {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, #25D366 100%);
+    color: #FFFFFF;
+    text-decoration: none;
+    font-weight: 800;
+    font-size: 0.88rem;
+    padding: 9px 18px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(37, 211, 102, 0.35);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --page-pad: 14px;
+  }
+
+  .site-header {
+    height: 62px;
+  }
+
+  .brand-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .brand-name {
+    font-size: 1.08rem;
+  }
+
+  .hero-headline {
+    font-size: 1.72rem;
+  }
+
+  .hero-subhead {
+    font-size: 0.9rem;
+  }
+
+  .section-title {
+    font-size: 1.5rem;
+  }
+
+  .section-subtitle,
+  .section-lead {
+    font-size: 0.88rem;
+  }
+
+  .reality-card,
+  .walkthrough-step-card,
+  .decision-card {
+    padding: 20px 14px;
+  }
+
+  .offer-box {
+    padding: 20px 12px;
+  }
+
+  .final-cta-box {
+    padding: 28px 14px;
+  }
+
+  .final-cta-heading {
+    font-size: 1.6rem;
   }
 }
